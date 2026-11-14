@@ -29,8 +29,9 @@ TOTAL_RULES = [
         0.95,
     ),
     (re.compile(r"\b(TOTAL|TOTL|TTL)\b"), 0.9),
-    (re.compile(r"\b(CASH|VISA|MASTER\w*|CARD|PAID|PAYMENT|TENDER\w*)\b"), 0.6),  # amount paid
 ]
+CASH_RULES = [(re.compile(r"\b(CASH|VISA|MASTER\w*|CARD|PAID|PAYMENT|TENDER\w*)\b"), 0.6)]
+CHANGE_RULES = [(re.compile(r"\bCHANGE\b"), 0.9)]
 NOT_TOTAL = re.compile(
     r"SUB\s*-?\s*TOTA|EXCL|TOTAL\s*Q|QTY|ITEM|DISC|SAV|CHANGE|ADJ|TOTAL\s*(GST|TAX|SST|VAT)|(GST|TAX|SST|VAT)\s*TOTAL"
 )
@@ -41,7 +42,9 @@ TAX_RULES = [
     (re.compile(r"TOTAL\s*(GST|TAX|VAT|SST)|(GST|TAX|VAT|SST)\s*(AMOUNT|AMT)"), 0.85),
     (re.compile(r"\b(GST|TAX|VAT|SST|MWST|TVA|IVA)\b"), 0.75),
 ]
-NOT_TAX = re.compile(r"INCL|EXCL|\bID\b|REG|NO\b|INVOICE")
+NOT_TAX = re.compile(  # totals that mention tax ("Total with GST", "Total Excl. GST"), tax IDs
+    r"INCL|EXCL|\bINC\b|WITH|DUE|SUB|TAXABLE|\bID\b|REG|NO\b|INVOICE|TOTAL(?!\s*(GST|TAX|VAT|SST))"
+)
 
 DATE_PATTERNS = [  # (pattern, group order); 'a' = ambiguous day/month, resolved by profile
     (re.compile(r"\b(\d{4})[/.-](\d{1,2})[/.-](\d{1,2})\b"), "ymd"),
@@ -84,6 +87,8 @@ class ExtractResult(BaseModel):
     total: Field[Decimal]  # amount paid, after any rounding
     subtotal: Field[Decimal]
     tax: Field[Decimal]
+    cash: Field[Decimal]  # amount tendered
+    change: Field[Decimal]
     currency: Field[str]  # ISO 4217; confidence 0.5 when taken from the profile default
 
 
@@ -105,14 +110,14 @@ def _find_amount(rows: list[str], conf: list[float], rules, exclude=None) -> Fie
     return Field()
 
 
-def _total(rows: list[str], conf: list[float]) -> Field[Decimal]:
-    total = _find_amount(rows, conf, TOTAL_RULES[:3], NOT_TOTAL)
-    if total.value is None:  # no total printed: amount paid = tendered - change
-        total = _find_amount(rows, conf, TOTAL_RULES[3:])
-        change = _find_amount(rows, conf, [(re.compile(r"\bCHANGE\b"), 1.0)])
-        if total.value is not None and change.value is not None and change.value < total.value:
-            total.value -= change.value
-    elif not TOTAL_RULES[0][0].search(rows[total.source_row]):  # not already a rounded total
+def _total(rows: list[str], conf: list[float], cash: Field, change: Field) -> Field[Decimal]:
+    total = _find_amount(rows, conf, TOTAL_RULES, NOT_TOTAL)
+    if total.value is None and cash.value is not None:  # no total printed: paid = cash - change
+        paid = cash.value
+        if change.value is not None and change.value < cash.value:
+            paid -= change.value
+        return Field(value=paid, confidence=cash.confidence, source_row=cash.source_row)
+    if total.value is not None and not TOTAL_RULES[0][0].search(rows[total.source_row]):
         for row in rows[total.source_row + 1 :]:  # a rounding row below the total: add it
             if ROUNDING.search(row) and (m := SIGNED_AMOUNT.search(row)):
                 total.value += Decimal(m.group(1) + m.group(2))
@@ -165,13 +170,19 @@ def _date(rows: list[str], conf: list[float], profile: TaxProfile) -> Field[date
                 elif order == "dmy":
                     d, mo, y = int(a), MONTHS.index(b) + 1, int(c)
                 else:
-                    d, mo = (int(a), int(b)) if profile.date_order == "dmy" else (int(b), int(a))
+                    d, mo = (int(b), int(a)) if profile.date_order == "mdy" else (int(a), int(b))
                     y = int(c)
                 try:
                     value = date(y + 2000 if y < 100 else y, mo, d)
                 except ValueError:
                     continue
-                ambiguous = order == "a" and int(a) <= 12 and int(b) <= 12 and a != b
+                ambiguous = (  # only a guess when the region's date order is unknown
+                    order == "a"
+                    and int(a) <= 12
+                    and int(b) <= 12
+                    and a != b
+                    and profile.date_order == "unknown"
+                )
                 return Field(
                     value=value,
                     confidence=round((0.7 if ambiguous else 0.95) * conf[i], 3),
@@ -194,11 +205,15 @@ def extract(ocr: OcrResult, profile: TaxProfile) -> ExtractResult:
             currency = Field(value=CURRENCIES[m.group(1)], confidence=0.95, source_row=i)
             break
 
+    cash = _find_amount(rows, conf, CASH_RULES, re.compile(r"CHANGE"))
+    change = _find_amount(rows, conf, CHANGE_RULES)
     return ExtractResult(
         merchant=_merchant(raw, conf),
         date=_date(rows, conf, profile),
-        total=_total(rows, conf),
+        total=_total(rows, conf, cash, change),
         subtotal=_find_amount(rows, conf, SUBTOTAL_RULES),
         tax=_find_amount(rows, conf, TAX_RULES, NOT_TAX),
+        cash=cash,
+        change=change,
         currency=currency,
     )

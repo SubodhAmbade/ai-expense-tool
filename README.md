@@ -19,7 +19,7 @@ Nothing is finalised without passing a confidence check or a human confirming it
 ```
 apps/
   api/        FastAPI backend (Render): OCR, extraction, validation, categorisation
-    config/   tax_profiles.yaml (generic + Swiss)
+    config/   tax_profiles.yaml (generic, Swiss, Malaysian)
   web/        Next.js frontend (Vercel): upload, review queue, export
 supabase/
   migrations/ database schema
@@ -51,20 +51,34 @@ cd ..\web; npm install; npm run dev
 
 ## Results so far
 
-**Extract** (rules only, no AI) scored against [SROIE](https://rrc.cvc.uab.es/?ch=13) receipt answers.
-Rules were tuned on receipts 000–149 and frozen, then measured once on 150–249:
+Scored against [SROIE](https://rrc.cvc.uab.es/?ch=13) receipt answers (Malaysian receipts, `my` profile).
+Rules were developed on receipts 000–349, then frozen and measured once on 350–449.
 
-| Field | Accuracy | Auto-accepted (confidence ≥ 0.8) | Accuracy when auto-accepted |
+**Extract** (rules only, no AI):
+
+| Field | Accuracy | Confident (≥ 0.8) | Accuracy when confident |
 |---|---|---|---|
-| Merchant | 90% | 72% | 94% |
-| Date | 95% | 60% | 98% |
-| Total | 89% | 93% | 88% |
+| Merchant | 95% | 87% | 99% |
+| Date | 100% | 92% | 100% |
+| Total | 87% | 94% | 89% |
 
-Known failure modes: OCR misreads digits (`1.42` for `21.42`), tax-summary rows mistaken for the total,
-merchant names that only appear in a logo. Most wrong totals break `subtotal + tax = total` or
-`cash − change = total`, which is what the Validate step checks next.
+**Validate** (plain-code checks; a total is only accepted when `subtotal + tax` or `cash − change` confirms it):
 
-Reproduce: `python -m app.ocr <folder>` then `python ../../eval/extract_eval.py <folder>` from `apps/api`.
+| | |
+|---|---|
+| Receipts auto-accepted | 29% |
+| Totals correct among auto-accepted | 97% |
+| Merchant + date + total all correct among auto-accepted | 93% |
+
+The other 71% go to review with a stated reason. Most common: total not confirmed by any check,
+no currency printed (currency is never assumed), low-confidence merchant.
+
+Known failure modes: OCR misreads digits; totals picked from summary rows (some come out ~2× too
+high); accounting-style negatives like `(0.01)` aren't read; merchant names that only appear in a logo.
+Some SROIE answers are themselves inconsistent (pre-rounding vs rounded totals, one labelled with the
+pre-tax amount).
+
+Reproduce from `apps/api`: `python -m app.ocr <folder>`, then `python ../../eval/extract_eval.py <folder> my`.
 
 ## Design choices
 
@@ -76,6 +90,6 @@ Reproduce: `python -m app.ocr <folder>` then `python ../../eval/extract_eval.py 
 ## Status
 
 - [x] OCR (RapidOCR) and rule-based extraction, with an eval against SROIE
-- [ ] Week 1: validation engine
+- [x] Validation engine: arithmetic, tax plausibility, cash, sanity checks; review routing
 - [ ] Week 2: baseline categoriser, labelled test set, model comparison
 - [ ] Week 3: UI, eval results, demo video
