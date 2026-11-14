@@ -10,4 +10,11 @@
   .\.venv\Scripts\python ..\..\eval\extract_eval.py ..\..\data\receipts\sroie my
   ```
 
-Categoriser comparison (baseline vs embeddings vs small LLM) will live here too.
+- `categorise_eval.py`: compares the categorisers in `app.categorise` on merchants they haven't seen.
+  Needs `data/receipts/sroie_ocr_text.jsonl` and `data/labels/merchant_categories.csv`. Embeds one
+  receipt at a time (about a minute on a laptop).
+
+  ```powershell
+  cd apps\api
+  .\.venv\Scripts\python ..\..\eval\categorise_eval.py
+  ```

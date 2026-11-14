@@ -16,14 +16,14 @@ A living document. Each feature PR updates the sections it touches.
 ## 1. What it does
 
 Turns a photo of a receipt into structured, accounting-ready data: merchant, date, total, tax,
-currency and (soon) an expense category.
+currency and a suggested expense category.
 
 The core rule: **a deterministic engine handles the numbers; AI only makes suggestions.** Every
 receipt is either auto-accepted, because independent checks agree, or sent to a person with
 the reason it needs a look. Nothing is silently guessed.
 
-Current status: OCR, extraction and validation work end to end from the command line. Results are
-in the [README](../README.md#results-so-far).
+Current status: OCR, extraction, validation and categorisation work from the command line. Results
+are in the [README](../README.md#results-so-far). The API endpoints and web UI are next.
 
 ## 2. Using it
 
@@ -53,6 +53,14 @@ From `apps\api`:
 
 The eval prints per-field accuracy, how many receipts validation would auto-accept, how often
 those are right, and every miss.
+
+```powershell
+# 3. Compare the categorisers (needs data/receipts/sroie_ocr_text.jsonl; about a minute)
+.\.venv\Scripts\python ..\..\eval\categorise_eval.py
+```
+
+The first run downloads the BERT model once (67 MB). Warnings about symlinks or an `HF_TOKEN` are
+harmless.
 
 ### Region profiles
 
@@ -93,7 +101,7 @@ flowchart LR
     C -->|ExtractResult| D[Validate<br/>app/validate.py]
     P[(tax_profiles.yaml)] --> C
     P --> D
-    D -->|auto_accept| E[Categorise<br/>planned]
+    D -->|auto_accept| E[Categorise<br/>app/categorise.py]
     D -->|needs_review| R[Review queue<br/>planned]
     R --> E
     E --> X[Export CSV / API<br/>planned]
@@ -106,8 +114,10 @@ flowchart LR
 | `app/ocr.py` | image → `OcrResult` | Fix phone rotation, resize to ≤ 2000 px, run RapidOCR, group boxes into rows |
 | `app/extract.py` | `OcrResult` + profile → `ExtractResult` | One function per field (merchant, date, total); ranked keyword rules; currency detection |
 | `app/validate.py` | `ExtractResult` + profile → `ValidationResult` | Five checks; decides auto-accept vs review |
+| `app/categorise.py` | receipt text → `Suggestion` | Three methods: `by_rules`, `by_description` (zero-shot), `by_examples` (nearest labelled receipts) |
 | `app/tax_profiles.py` | YAML → `TaxProfile` | Loads and validates region profiles |
 | `eval/extract_eval.py` | folder of `.ocr.json` + SROIE keys → report | Scores extraction and validation |
+| `eval/categorise_eval.py` | OCR text + category labels → report | Compares the categorisers on unseen merchants |
 
 Each stage depends only on the previous stage's output model, never on its internals. Swapping the
 OCR engine means rewriting `ocr.py` only.
@@ -118,6 +128,7 @@ OCR engine means rewriting `ocr.py` only.
 - **`ExtractResult`**: `merchant`, `date`, `total` (amount paid, after rounding), `subtotal`, `tax`,
   `cash`, `change`, `currency`; each a `Field` with value, confidence and source row.
 - **`ValidationResult`**: `status`, `checks` (name, passed / failed / could-not-run, detail), `reasons`.
+- **`Suggestion`**: `category`, `confidence`, `source` (`rule`, `description` or `examples`). Always a suggestion; a person can override it.
 
 Money is `Decimal` everywhere and `numeric` in the database. There is no float arithmetic on amounts.
 
@@ -169,6 +180,11 @@ docs/            this guide
 | Tax check | Plausibility range, not one exact rate | Works for mixed-rate receipts and for the generic profile |
 | Totals | Auto-accepted only when an independent check confirms them | Raised accuracy of auto-accepted totals from 89% to 97% (28 of 29) on fresh receipts, at the cost of a lower auto-accept rate |
 | Python | Pinned to 3.13 (`.python-version`, CI, setup) | `onnxruntime` has no build for 3.15 yet |
+| Categories | Generic set plus groceries, repairs & maintenance, health | The receipts needed them; otherwise "other" swallowed a third of the data |
+| Category model | Small local BERT (`bge-small-en-v1.5` via `fastembed`), no LLM API | No API key to leak and no per-use bill; runs on the ONNX runtime OCR already uses |
+| Zero-shot | Measured, not used | 5% accuracy: a small embedding model can't match raw receipt text to one-line category descriptions |
+| Categoriser in the app | Rules first; BERT + examples once Render memory is measured | Rules are instant and need nothing loaded; BERT is 74% on unseen merchants and ready to switch on |
+| Category labels | AI-drafted, flagged rows awaiting human review | Faster to start; verifying them is the next step for honest numbers |
 
 ## 5. How we measure
 
@@ -184,6 +200,15 @@ has its correct company, date, address and total.
   review. A lower auto-accept rate is acceptable; wrong auto-accepts are not.
 - **Known dataset noise:** some SROIE totals are the pre-rounding amount, others the rounded one;
   at least one is the pre-tax amount.
+
+**Categories** are scored differently, because SROIE has no category answers:
+
+- Labels are one category per merchant (`data/labels/merchant_categories.csv`), drafted by AI. Rows
+  marked `please_check = yes` still need a person to confirm them.
+- **Split by merchant, not by receipt.** 30% of merchants are held out; none of their receipts are
+  used as examples. Otherwise a method could score well by memorising repeat merchants.
+- The labels were drafted partly with merchant-name keywords, so rules have an unfair edge where the
+  name contains one. The eval reports that half and the other half separately.
 
 ## 6. Development workflow
 
@@ -210,17 +235,19 @@ money; region-specific values in YAML; every bug fix comes with a test.
 | Commits show the wrong author | Global git identity belongs to another account | `git config user.name` / `user.email` in this repo |
 | A file Claude updated reverted itself | It was open in VS Code and the old buffer was saved | Close the tab before files are updated, reopen after |
 | "Nothing to compare" when opening a PR | The commit went straight to `main` | Branch before committing |
+| VS Code or the laptop froze during the category eval | The embedding model was given too many receipts at once and ran out of memory | Fixed: receipts are embedded one at a time. If it recurs, end `python.exe` in Task Manager |
 
 ## 8. Roadmap
 
 - [x] OCR (RapidOCR)
 - [x] Extract: rules, confidence, source rows, SROIE eval
 - [x] Validate: five checks, review routing, Malaysia profile
-- [ ] Categorise: keyword/merchant baseline vs embeddings vs small LLM, on a labelled set
+- [x] Categorise: rules vs local BERT (zero-shot and with examples), split by merchant
+- [ ] Verify the 70 flagged category labels
 - [ ] Review queue UI (Next.js)
 - [ ] Export: CSV and API payload
 - [ ] Deploy (Render + Vercel + Supabase) and a 60-second demo
 
-Known issues to address: totals picked from summary rows (some ~2× too high), accounting-style
+Known issues to address: unverified category labels, totals picked from summary rows (some ~2× too high), accounting-style
 negatives like `(0.01)`, merchant names that only appear in a logo, OCR speed on Render's free tier,
 and no tests yet on phone photos (SROIE receipts are scans).

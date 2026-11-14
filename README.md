@@ -12,7 +12,7 @@ For setup, usage, architecture and design decisions, see the **[User and Archite
 1. **Capture**: upload or photograph a receipt; OCR runs locally (Tesseract or PaddleOCR).
 2. **Extract**: merchant, date, amount, currency, tax.
 3. **Validate**: plain code checks that net + tax = total. Tax rates live in a per-region config.
-4. **Categorise**: keyword/merchant baseline first, then embeddings or a small LLM, compared against it.
+4. **Categorise**: keyword/merchant rules first, compared against a small local BERT model.
 5. **Review queue**: low-confidence items go to a person.
 6. **Export**: CSV or an API-style payload for accounting tools.
 
@@ -75,12 +75,27 @@ Rules were developed on receipts 000–349, then frozen and measured once on 350
 The other 71% go to review with a stated reason. Most common: total not confirmed by any check,
 no currency printed (currency is never assumed), low-confidence merchant.
 
+**Categorise** (suggestions only; a person can always change them). Compared on 201 receipts from 76
+merchants that none of the methods had seen (the data is split by merchant, not by receipt):
+
+| Method | Accuracy | Confident (≥ 0.8) | Accuracy when confident |
+|---|---|---|---|
+| Rules (merchant and item keywords) | 85% | 49% | 100% |
+| BERT, zero-shot (compare to category descriptions) | 5% | 29% | 7% |
+| BERT + examples (nearest labelled receipts) | 74% | 45% | 84% |
+
+BERT = `bge-small-en-v1.5`, run locally (no API, no per-use cost); 255 ms per receipt on a laptop.
+Caveat: the category labels were drafted by AI and are not yet human-verified, and they were drafted
+partly with keyword rules, so the Rules row is inflated. The eval also reports the fair split
+(receipts whose merchant name does or doesn't reveal the category).
+
 Known failure modes: OCR misreads digits; totals picked from summary rows (some come out ~2× too
 high); accounting-style negatives like `(0.01)` aren't read; merchant names that only appear in a logo.
 Some SROIE answers are themselves inconsistent (pre-rounding vs rounded totals, one labelled with the
 pre-tax amount).
 
-Reproduce from `apps/api`: `python -m app.ocr <folder>`, then `python ../../eval/extract_eval.py <folder> my`.
+Reproduce from `apps/api`: `python -m app.ocr <folder>`, then `python ../../eval/extract_eval.py <folder> my`;
+for categories, `python ../../eval/categorise_eval.py`.
 
 ## Design choices
 
@@ -93,5 +108,6 @@ Reproduce from `apps/api`: `python -m app.ocr <folder>`, then `python ../../eval
 
 - [x] OCR (RapidOCR) and rule-based extraction, with an eval against SROIE
 - [x] Validation engine: arithmetic, tax plausibility, cash, sanity checks; review routing
+- [x] Categoriser comparison: rules vs local BERT (zero-shot and with examples)
 - [ ] Week 2: baseline categoriser, labelled test set, model comparison
 - [ ] Week 3: UI, eval results, demo video
