@@ -39,11 +39,11 @@ ROUNDING = re.compile(r"ROUND\w*\s*(ADJ|\(|:|-?\d|RM)")  # an adjustment row, no
 SIGNED_AMOUNT = re.compile(r"(-?)\s*(\d+\.\d{2})\s*$")
 SUBTOTAL_RULES = [(re.compile(r"SUB\s*-?\s*TOTA|TOTAL\s*EXCL|AMOUNT\s*EXCL"), 0.85)]
 TAX_RULES = [
-    (re.compile(r"TOTAL\s*(GST|TAX|VAT|SST)|(GST|TAX|VAT|SST)\s*(AMOUNT|AMT)"), 0.85),
+    (re.compile(r"TOTAL\s*(GST|TAX|VAT|SST)|(GST|TAX|VAT|SST)\s*(AMOUNT|AMT|TOTAL)"), 0.85),
     (re.compile(r"\b(GST|TAX|VAT|SST|MWST|TVA|IVA)\b"), 0.75),
 ]
 NOT_TAX = re.compile(  # totals that mention tax ("Total with GST", "Total Excl. GST"), tax IDs
-    r"INCL|EXCL|\bINC\b|WITH|DUE|SUB|TAXABLE|\bID\b|REG|NO\b|INVOICE|"
+    r"INCL|EXCL|\bINC\b|WITH|SUB|TAXABLE|\bID\b|REG|NO\b|INVOICE|"
     r"(?<!GST )(?<!TAX )(?<!VAT )(?<!SST )TOTAL(?!\s*(GST|TAX|VAT|SST))"  # keep "GST TOTAL 0.51"
 )
 
@@ -114,9 +114,8 @@ def _find_amount(rows: list[str], conf: list[float], rules, exclude=None) -> Fie
 def _total(rows: list[str], conf: list[float], cash: Field, change: Field) -> Field[Decimal]:
     total = _find_amount(rows, conf, TOTAL_RULES, NOT_TOTAL)
     if total.value is None and cash.value is not None:  # no total printed: paid = cash - change
-        paid = cash.value
-        if change.value is not None and change.value < cash.value:
-            paid -= change.value
+        # a misread change can make this <= 0; the sanity check then sends it to review
+        paid = cash.value - (change.value or 0)
         return Field(value=paid, confidence=cash.confidence, source_row=cash.source_row)
     if total.value is not None and not TOTAL_RULES[0][0].search(rows[total.source_row]):
         for row in rows[total.source_row + 1 :]:  # a rounding row below the total: add it
@@ -193,7 +192,7 @@ def _date(rows: list[str], conf: list[float], profile: TaxProfile) -> Field[date
 
 
 def extract(ocr: OcrResult, profile: TaxProfile) -> ExtractResult:
-    raw = ocr.text.splitlines()
+    raw = [" ".join(r.split()) for r in ocr.text.splitlines()]  # collapse repeated spaces
     rows = [r.upper() for r in raw]
     conf = [
         min((ln.confidence for ln in ocr.lines if ln.row == i), default=0.0)

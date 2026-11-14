@@ -35,7 +35,8 @@ profile = profiles[sys.argv[2] if len(sys.argv) > 2 else "generic"]
 
 stats = {f: {"n": 0, "correct": 0, "confident": 0, "confident_correct": 0} for f in ANSWER_KEY}
 misses = []
-accepted, accepted_correct, accepted_total_correct = 0, 0, 0
+accepted = 0
+scored = {"total": [0, 0], "all": [0, 0]}  # among auto-accepted with answers: [n, correct]
 files = sorted(folder.glob("*.ocr.json"))
 for path in files:
     key = json.loads((folder / "key" / path.name.replace(".ocr.json", ".json")).read_text("utf-8"))
@@ -72,8 +73,12 @@ for path in files:
 
     if validate(result, profile).status == "auto_accept":
         accepted += 1
-        accepted_correct += all(ok is not False for ok in checks.values())
-        accepted_total_correct += checks["total"] is not False
+        if checks["total"] is not None:  # only receipts that have an answer are scored
+            scored["total"][0] += 1
+            scored["total"][1] += checks["total"]
+        if None not in checks.values():
+            scored["all"][0] += 1
+            scored["all"][1] += all(checks.values())
 
 print(f"\n{len(files)} receipts, profile '{profile.code}', review threshold {REVIEW_THRESHOLD}\n")
 print("| Field | Accuracy | Auto-accepted | Accuracy when auto-accepted |")
@@ -82,6 +87,7 @@ for field, s in stats.items():
     auto = s["confident_correct"] / s["confident"] if s["confident"] else 0
     print(f"| {field} | {s['correct'] / s['n']:.0%} | {s['confident'] / s['n']:.0%} | {auto:.0%} |")
 print(f"\nAfter validation: {accepted / len(files):.0%} of receipts auto-accepted;")
-print(f"of those, total correct {accepted_total_correct / max(accepted, 1):.0%}, ", end="")
-print(f"merchant + date + total all correct {accepted_correct / max(accepted, 1):.0%}")
+(tn, tc), (an, ac) = scored["total"], scored["all"]
+print(f"of those, total correct {tc / max(tn, 1):.0%} ({tc}/{tn}), ", end="")
+print(f"merchant + date + total all correct {ac / max(an, 1):.0%} ({ac}/{an})")
 print("\nMisses:\n" + "\n".join(misses))

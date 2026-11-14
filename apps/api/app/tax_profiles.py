@@ -19,6 +19,8 @@ class TaxProfile(BaseModel):
     @field_validator("rates")
     @classmethod
     def rates_in_range(cls, v: dict[str, Decimal]) -> dict[str, Decimal]:
+        if not v:
+            raise ValueError('a profile needs at least one rate; use zero: "0" for tax-free')
         for name, rate in v.items():
             if not Decimal("0") <= rate < Decimal("1"):
                 raise ValueError(f"rate '{name}' must be a fraction between 0 and 1, got {rate}")

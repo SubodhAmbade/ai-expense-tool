@@ -67,8 +67,8 @@ Rules were developed on receipts 000–349, then frozen and measured once on 350
 | | |
 |---|---|
 | Receipts auto-accepted | 29% |
-| Totals correct among auto-accepted | 97% |
-| Merchant + date + total all correct among auto-accepted | 93% |
+| Totals correct among auto-accepted | 97% (28 of 29) |
+| Merchant + date + total all correct among auto-accepted | 93% (26 of 28 with full answers) |
 
 The other 71% go to review with a stated reason. Most common: total not confirmed by any check,
 no currency printed (currency is never assumed), low-confidence merchant.
