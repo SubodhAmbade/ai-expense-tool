@@ -43,7 +43,8 @@ TAX_RULES = [
     (re.compile(r"\b(GST|TAX|VAT|SST|MWST|TVA|IVA)\b"), 0.75),
 ]
 NOT_TAX = re.compile(  # totals that mention tax ("Total with GST", "Total Excl. GST"), tax IDs
-    r"INCL|EXCL|\bINC\b|WITH|DUE|SUB|TAXABLE|\bID\b|REG|NO\b|INVOICE|TOTAL(?!\s*(GST|TAX|VAT|SST))"
+    r"INCL|EXCL|\bINC\b|WITH|DUE|SUB|TAXABLE|\bID\b|REG|NO\b|INVOICE|"
+    r"(?<!GST )(?<!TAX )(?<!VAT )(?<!SST )TOTAL(?!\s*(GST|TAX|VAT|SST))"  # keep "GST TOTAL 0.51"
 )
 
 DATE_PATTERNS = [  # (pattern, group order); 'a' = ambiguous day/month, resolved by profile
