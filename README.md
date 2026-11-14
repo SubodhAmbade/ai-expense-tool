@@ -5,6 +5,8 @@ Turns receipt photos into structured, categorised, accounting-ready expense data
 **Core principle:** a deterministic engine handles the numbers; AI only makes suggestions.
 Nothing is finalised without passing a confidence check or a human confirming it.
 
+For setup, usage, architecture and design decisions, see the **[User and Architecture Guide](docs/GUIDE.md)**.
+
 ## Pipeline
 
 1. **Capture**: upload or photograph a receipt; OCR runs locally (Tesseract or PaddleOCR).
