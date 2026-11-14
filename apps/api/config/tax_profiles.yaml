@@ -4,7 +4,7 @@ profiles:
   generic:
     name: Generic (single standard rate, edit for your region)
     default_currency: USD
-    date_order: dmy  # most of the world; set mdy for US receipts
+    date_order: unknown  # read day-first, but send dates like 03/04 to review
     rates:
       standard: "0.10"
       zero: "0"
@@ -17,4 +17,16 @@ profiles:
       standard: "0.081"
       accommodation: "0.038"
       reduced: "0.026"
+      zero: "0"
+
+  my:
+    name: Malaysia (GST 6% Apr 2015 - May 2018; SST from Sep 2018)
+    default_currency: MYR
+    date_order: dmy
+    rates:
+      gst: "0.06"
+      sales_tax: "0.10"
+      sales_tax_reduced: "0.05"
+      service_tax: "0.08"  # 6% until Mar 2024, still 6% for F&B, telecoms, logistics
+      service_tax_reduced: "0.06"
       zero: "0"

@@ -60,3 +60,13 @@ def test_rounding_and_cash_rules() -> None:
     assert rounding_after.total.value == Decimal("60.30")
     assert rounding_before.total.value == Decimal("4.90")
     assert no_total.total.value == Decimal("28.60")
+    misread = extract(ocr("CASH 20.00", "CHANGE 20.00"), generic)  # impossible: left for sanity
+    assert misread.total.value == Decimal("0.00")
+
+
+def test_tax_label_with_total_after_the_tax_name() -> None:
+    for label in ("GST TOTAL", "GST  TOTAL", "TAX TOTAL", "TOTAL GST", "TAX DUE"):
+        result = extract(ocr("SUBTOTAL 8.49", f"{label} 0.51", "TOTAL 9.00"), PROFILES["my"])
+        assert result.tax.value == Decimal("0.51"), label
+    with_gst = extract(ocr("Total with GST 41.48"), PROFILES["my"])  # a total, not the tax
+    assert with_gst.tax.value is None

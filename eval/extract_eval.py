@@ -1,4 +1,4 @@
-"""Score the extractor against SROIE answers.
+"""Score extraction and validation against SROIE answers.
 
 Run from apps/api:
     .venv\\Scripts\\python ..\\..\\eval\\extract_eval.py ..\\..\\data\\receipts\\sroie
@@ -19,8 +19,8 @@ from app.config import get_settings  # noqa: E402
 from app.extract import extract  # noqa: E402
 from app.ocr import OcrResult  # noqa: E402
 from app.tax_profiles import load_tax_profiles  # noqa: E402
+from app.validate import REVIEW_THRESHOLD, validate  # noqa: E402
 
-REVIEW_THRESHOLD = 0.8  # below this a field would go to the review queue
 DATE_FORMATS = ["%d/%m/%Y", "%d-%m-%Y", "%d/%m/%y", "%d-%m-%y", "%d.%m.%Y", "%Y-%m-%d", "%d %b %Y"]
 ANSWER_KEY = {"merchant": "company", "date": "date", "total": "total"}
 
@@ -35,6 +35,8 @@ profile = profiles[sys.argv[2] if len(sys.argv) > 2 else "generic"]
 
 stats = {f: {"n": 0, "correct": 0, "confident": 0, "confident_correct": 0} for f in ANSWER_KEY}
 misses = []
+accepted = 0
+scored = {"total": [0, 0], "all": [0, 0]}  # among auto-accepted with answers: [n, correct]
 files = sorted(folder.glob("*.ocr.json"))
 for path in files:
     key = json.loads((folder / "key" / path.name.replace(".ocr.json", ".json")).read_text("utf-8"))
@@ -69,10 +71,23 @@ for path in files:
             got, want = getattr(result, field).value, key[ANSWER_KEY[field]]
             misses.append(f"{path.name.split('.')[0]} {field}: got {got!r}, want {want!r}")
 
+    if validate(result, profile).status == "auto_accept":
+        accepted += 1
+        if checks["total"] is not None:  # only receipts that have an answer are scored
+            scored["total"][0] += 1
+            scored["total"][1] += checks["total"]
+        if None not in checks.values():
+            scored["all"][0] += 1
+            scored["all"][1] += all(checks.values())
+
 print(f"\n{len(files)} receipts, profile '{profile.code}', review threshold {REVIEW_THRESHOLD}\n")
 print("| Field | Accuracy | Auto-accepted | Accuracy when auto-accepted |")
 print("|---|---|---|---|")
 for field, s in stats.items():
     auto = s["confident_correct"] / s["confident"] if s["confident"] else 0
     print(f"| {field} | {s['correct'] / s['n']:.0%} | {s['confident'] / s['n']:.0%} | {auto:.0%} |")
+print(f"\nAfter validation: {accepted / len(files):.0%} of receipts auto-accepted;")
+(tn, tc), (an, ac) = scored["total"], scored["all"]
+print(f"of those, total correct {tc / max(tn, 1):.0%} ({tc}/{tn}), ", end="")
+print(f"merchant + date + total all correct {ac / max(an, 1):.0%} ({ac}/{an})")
 print("\nMisses:\n" + "\n".join(misses))

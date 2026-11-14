@@ -12,12 +12,15 @@ class TaxProfile(BaseModel):
     code: str
     name: str
     default_currency: str
-    date_order: Literal["dmy", "mdy"] = "dmy"  # how to read ambiguous dates like 03/04/2025
+    # How to read dates like 03/04/2025. "unknown" reads day-first but marks such dates for review.
+    date_order: Literal["dmy", "mdy", "unknown"] = "unknown"
     rates: dict[str, Decimal]
 
     @field_validator("rates")
     @classmethod
     def rates_in_range(cls, v: dict[str, Decimal]) -> dict[str, Decimal]:
+        if not v:
+            raise ValueError('a profile needs at least one rate; use zero: "0" for tax-free')
         for name, rate in v.items():
             if not Decimal("0") <= rate < Decimal("1"):
                 raise ValueError(f"rate '{name}' must be a fraction between 0 and 1, got {rate}")
