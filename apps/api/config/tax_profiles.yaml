@@ -1,0 +1,18 @@
+# Tax rates per region, as fractions. Write them as quoted strings so they load as exact decimals.
+# Add a region by adding a profile; no code changes needed.
+profiles:
+  generic:
+    name: Generic (single standard rate, edit for your region)
+    default_currency: USD
+    rates:
+      standard: "0.10"
+      zero: "0"
+
+  ch:
+    name: Switzerland (MWST/TVA/IVA, rates from 1 Jan 2024)
+    default_currency: CHF
+    rates:
+      standard: "0.081"
+      accommodation: "0.038"
+      reduced: "0.026"
+      zero: "0"
