@@ -4,6 +4,7 @@ profiles:
   generic:
     name: Generic (single standard rate, edit for your region)
     default_currency: USD
+    date_order: dmy  # most of the world; set mdy for US receipts
     rates:
       standard: "0.10"
       zero: "0"
@@ -11,6 +12,7 @@ profiles:
   ch:
     name: Switzerland (MWST/TVA/IVA, rates from 1 Jan 2024)
     default_currency: CHF
+    date_order: dmy
     rates:
       standard: "0.081"
       accommodation: "0.038"

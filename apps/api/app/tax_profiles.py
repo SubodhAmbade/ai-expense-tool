@@ -2,6 +2,7 @@
 
 from decimal import Decimal
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, field_validator
@@ -11,6 +12,7 @@ class TaxProfile(BaseModel):
     code: str
     name: str
     default_currency: str
+    date_order: Literal["dmy", "mdy"] = "dmy"  # how to read ambiguous dates like 03/04/2025
     rates: dict[str, Decimal]
 
     @field_validator("rates")

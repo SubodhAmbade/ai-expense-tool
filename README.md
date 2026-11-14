@@ -49,6 +49,23 @@ cd apps\api; python -m venv .venv; .\.venv\Scripts\pip install -r requirements-d
 cd ..\web; npm install; npm run dev
 ```
 
+## Results so far
+
+**Extract** (rules only, no AI) scored against [SROIE](https://rrc.cvc.uab.es/?ch=13) receipt answers.
+Rules were tuned on receipts 000–149 and frozen, then measured once on 150–249:
+
+| Field | Accuracy | Auto-accepted (confidence ≥ 0.8) | Accuracy when auto-accepted |
+|---|---|---|---|
+| Merchant | 90% | 72% | 94% |
+| Date | 95% | 60% | 98% |
+| Total | 89% | 93% | 88% |
+
+Known failure modes: OCR misreads digits (`1.42` for `21.42`), tax-summary rows mistaken for the total,
+merchant names that only appear in a logo. Most wrong totals break `subtotal + tax = total` or
+`cash − change = total`, which is what the Validate step checks next.
+
+Reproduce: `python -m app.ocr <folder>` then `python ../../eval/extract_eval.py <folder>` from `apps/api`.
+
 ## Design choices
 
 - Currency is stored on every receipt, never assumed.
@@ -58,6 +75,7 @@ cd ..\web; npm install; npm run dev
 
 ## Status
 
-- [ ] Week 1: collect 30–50 receipts, OCR spike, validation engine
+- [x] OCR (RapidOCR) and rule-based extraction, with an eval against SROIE
+- [ ] Week 1: validation engine
 - [ ] Week 2: baseline categoriser, labelled test set, model comparison
 - [ ] Week 3: UI, eval results, demo video

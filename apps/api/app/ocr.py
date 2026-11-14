@@ -22,6 +22,7 @@ class OcrLine(BaseModel):
     text: str
     confidence: float
     box: list[list[int]]  # 4 corners, clockwise from top-left
+    row: int  # index of the text row this box belongs to
 
 
 class OcrResult(BaseModel):
@@ -45,7 +46,12 @@ def run_ocr(source: str | Path | BinaryIO) -> OcrResult:
     # RapidOCR returns None (not empty lists) when the image has no text.
     lines = (
         [
-            OcrLine(text=t, confidence=round(float(s), 3), box=np.asarray(b).astype(int).tolist())
+            OcrLine(
+                text=t,
+                confidence=round(float(s), 3),
+                box=np.asarray(b).astype(int).tolist(),
+                row=-1,  # set once the rows are grouped below
+            )
             for b, t, s in zip(out.boxes, out.txts, out.scores, strict=True)
         ]
         if out.boxes is not None
@@ -66,6 +72,9 @@ def run_ocr(source: str | Path | BinaryIO) -> OcrResult:
                 continue
         rows.append([line])
     rows = [sorted(row, key=lambda ln: ln.box[0][0]) for row in rows]
+    for i, row in enumerate(rows):
+        for ln in row:
+            ln.row = i
 
     return OcrResult(
         duration_ms=round((time.perf_counter() - start) * 1000),
