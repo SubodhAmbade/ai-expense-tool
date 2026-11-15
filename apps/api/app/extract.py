@@ -41,15 +41,15 @@ CASH_RULES = [(re.compile(r"\b(CASH|VISA|MASTER\w*|CARD|PAID|PAYMENT|TENDER\w*)\
 CHANGE_RULES = [(re.compile(r"\bCHANGE\b"), 0.9)]
 NOT_TOTAL = re.compile(
     r"SUB\s*-?\s*TOTA|EXCL|TOTAL\s*Q|QTY|ITEM|DISC|SAV|CHANGE|(?<!AFTER )(?<!ROUNDING )ADJ|"
-    # "(TOTAL INCLUDED GST @ 6% 1.42)" is the tax, not the total
-    r"TOTAL\s*(GST|TAX|SST|VAT)|(GST|TAX|SST|VAT)\s*TOTAL|INCLUDED\s*(GST|TAX)"
+    # "(TOTAL INCLUDED GST @ 6% 1.42)" is the tax; "GRAND TOTAL INCLUDED GST 106.00" stays a total
+    r"TOTAL\s*(GST|TAX|SST|VAT)|(GST|TAX|SST|VAT)\s*TOTAL|INCLUDED\s*(GST|TAX)\s*@"
 )
 # The per-tax-code table printed below the total; it repeats amounts that aren't the total.
 TAX_SUMMARY = re.compile(r"(GST|TAX|SST)\s*SUMMARY|SUMMARY\s*(OF\s*)?(GST|TAX)")
 KEYWORDS = ("TOTAL", "PAYABLE")  # read through one-letter OCR slips: TATAL, TOTAI, POYABLE
 WORD = re.compile(r"\b[A-Z]{4,7}\b")
 ROUNDING_MAX = Decimal("0.10")  # cash rounding moves a total by a few cents, never more
-ROUNDING = re.compile(r"ROUND\w*\s*(ADJ|\(|:|-?\d|RM)")  # an adjustment row, not a rounded total
+ROUNDING = re.compile(r"ROUND\w*\s*(ADJ|\(|:|-?\.?\d|RM)")  # an adjustment row, not a rounded total
 SIGNED_AMOUNT = re.compile(r"(-?)\s*(\d*\.\d{2})\s*$")  # "-0.02", ".01"
 SUBTOTAL_RULES = [(re.compile(r"SUB\s*-?\s*TOTA|TOTAL\s*EXCL|AMOUNT\s*EXCL"), 0.85)]
 TAX_RULES = [
@@ -138,7 +138,8 @@ def _total(rows: list[str], conf: list[float], cash: Field, change: Field) -> Fi
         paid = cash.value - (change.value or 0)
         return Field(value=paid, confidence=cash.confidence, source_row=cash.source_row)
     if total.value is not None and not TOTAL_RULES[0][0].search(rows[total.source_row]):
-        for row in rows[total.source_row + 1 :]:  # a rounding row below the total: add it
+        for row in rows[total.source_row + 1 : end]:  # a rounding row below the total,
+            # above any summary table
             if ROUNDING.search(row) and (m := SIGNED_AMOUNT.search(row)):
                 amount = Decimal(m.group(1) + m.group(2))
                 if abs(amount) < ROUNDING_MAX:  # an adjustment: add it

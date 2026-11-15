@@ -90,10 +90,13 @@ for n in range(first, last + 1):
             + "; ".join(f"'{label(rows, i)}'" for i in hits[:3])
         )
 
+    # The charge is the right-most amount; "SERVICE CHARGE 10.00 % 0.00" adds nothing.
     charged = [
         r
         for r in rows
-        if SERVICE.search(r) and any(Decimal(a.replace(",", "")) > 0 for a in AMOUNT.findall(r))
+        if SERVICE.search(r)
+        and (amounts := AMOUNT.findall(r))
+        and Decimal(amounts[-1].replace(",", "")) > 0
     ]
     if charged:  # a service charge actually added, not a "SERVICE CHARGE 0.00" line
         service["receipts"] += 1

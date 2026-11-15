@@ -126,3 +126,21 @@ def test_tax_lines_and_tax_summary_are_not_the_total() -> None:
         PROFILES["my"],
     )
     assert result.total.value is None  # nothing safe to read: review, not a wrong number
+
+
+def test_decimal_only_rounding_rows() -> None:
+    for adjustment, total in [(".01", "10.02"), ("-.01", "10.00")]:
+        result = extract(ocr("TOTAL 10.01", f"ROUNDING {adjustment}"), PROFILES["my"])
+        assert result.total.value == Decimal(total)
+
+
+def test_tax_summary_rows_do_not_round_the_total() -> None:
+    result = extract(ocr("TOTAL 10.02", "GST SUMMARY", "ROUNDING ADJ -0.02"), PROFILES["my"])
+    assert result.total.value == Decimal("10.02")
+
+
+def test_total_that_includes_gst_is_still_a_total() -> None:
+    result = extract(
+        ocr("SUBTOTAL 100.00", "GST 6.00", "GRAND TOTAL INCLUDED GST 106.00"), PROFILES["my"]
+    )
+    assert result.total.value == Decimal("106.00")
