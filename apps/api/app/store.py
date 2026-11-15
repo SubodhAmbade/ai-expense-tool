@@ -32,22 +32,26 @@ class Store:
         try:
             return _client().table("receipts").insert({**row, "image_path": path}).execute().data[0]
         except Exception:
-            with suppress(
-                Exception
-            ):  # don't leave an orphaned photo; the insert error matters more
-                _client().storage.from_(BUCKET).remove([path])
+            # The row may have been saved before the connection failed, so only delete the photo
+            # when no receipt points at it. If even that check fails, keep it: a stray file is
+            # harmless, a receipt with a missing photo isn't. Either way, report the insert error.
+            with suppress(Exception):
+                saved = _client().table("receipts").select("id").eq("image_path", path).execute()
+                if not saved.data:
+                    _client().storage.from_(BUCKET).remove([path])
             raise
 
     def list(self, status: str | None) -> list[dict]:
         rows: list[dict] = []
-        while True:  # page through, so the list and the CSV export never stop at PAGE rows
-            query = _client().table("receipts").select(LIST_COLUMNS)
-            query = query.order("created_at", desc=True).order("id")  # id breaks ties between pages
+        # Page through oldest first, so the list and the CSV export never stop at PAGE rows. New
+        # uploads land at the end, so earlier pages can't shift and repeat a row; id breaks ties.
+        while True:
+            query = _client().table("receipts").select(LIST_COLUMNS).order("created_at").order("id")
             query = query.eq("status", status) if status else query
             batch = query.range(len(rows), len(rows) + PAGE - 1).execute().data
             rows += batch
             if len(batch) < PAGE:
-                return rows
+                return rows[::-1]  # newest first
 
     def get(self, receipt_id: str) -> dict | None:
         rows = _client().table("receipts").select("*").eq("id", receipt_id).execute().data

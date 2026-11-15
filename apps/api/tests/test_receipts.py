@@ -95,6 +95,10 @@ def test_rejects_bad_uploads_and_unknown_ids(client: TestClient) -> None:
     assert post("a.txt", b"hello", "text/plain").status_code == 422  # not an image at all
     assert post("b.png", b"hello").status_code == 422  # labelled PNG, isn't one
     assert post("c.png", png[: len(png) // 2]).status_code == 422  # cut off halfway
+    bad_checksum = bytearray(png)
+    idat = bad_checksum.find(b"IDAT")
+    bad_checksum[idat + 4 + int.from_bytes(bad_checksum[idat - 4 : idat], "big")] ^= 0xFF
+    assert post("g.png", bytes(bad_checksum)).status_code == 422  # damaged PNG checksum
     assert post("d.gif", gif.getvalue(), "image/gif").status_code == 415  # real image, wrong format
     assert post("e.png", b"0" * (10 * 1024 * 1024 + 1)).status_code == 413
     assert post("f.png", png, query="?profile=xx").status_code == 422
@@ -106,6 +110,9 @@ def test_category_cannot_be_cleared(client: TestClient) -> None:
     png = receipt_png("ABC HO TRADING", "TOTAL 5.00")
     row = client.post("/receipts", files={"file": ("r.png", png, "image/png")}).json()
     assert client.patch(f"/receipts/{row['id']}", json={"category": None}).status_code == 422
+    store = app.dependency_overrides[get_store]()
+    store.rows[row["id"]]["category"] = None  # e.g. a row edited by hand in the dashboard
+    assert client.patch(f"/receipts/{row['id']}", json={}).status_code == 422
 
 
 def test_export_neutralises_spreadsheet_formulas(client: TestClient) -> None:

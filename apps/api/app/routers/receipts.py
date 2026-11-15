@@ -58,7 +58,8 @@ def upload(file: UploadFile, store: StoreDep, profile: str | None = None) -> dic
         with Image.open(BytesIO(image)) as img:
             detected = img.format
             img.verify()
-    except (UnidentifiedImageError, OSError, Image.DecompressionBombError):
+    except (UnidentifiedImageError, OSError, SyntaxError, Image.DecompressionBombError):
+        # SyntaxError: Pillow's signal for a damaged PNG chunk, e.g. a bad checksum
         raise HTTPException(422, "That file isn't a readable image") from None
     if detected not in FORMATS:
         raise HTTPException(415, f"Upload a JPEG, PNG or WebP image, not {detected}")
@@ -114,6 +115,8 @@ def confirm(receipt_id: UUID, update: ReceiptUpdate, store: StoreDep) -> dict:
     if row is None:
         raise HTTPException(404, "Receipt not found")
     changes = update.model_dump(mode="json", exclude_unset=True)
+    if changes.get("category", row["category"]) is None:  # what the receipt ends up with
+        raise HTTPException(422, "A confirmed receipt needs a category; use 'other' if none fits")
     if changes.get("category", row["category"]) != row["category"]:
         changes["category_source"] = "human"
     now = datetime.now(UTC).isoformat()

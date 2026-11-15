@@ -22,10 +22,13 @@ type Editable = Pick<
 export default function ReviewForm({ receipt }: { receipt: Editable }) {
   const router = useRouter();
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
 
   // onSubmit rather than a form action: a form action clears the reviewer's edits even when saving fails.
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (saving) return; // a second click mustn't race the first save
+    setSaving(true);
     setError("");
     // Empty fields are sent as null; amounts stay strings so the API keeps them exact.
     const body = Object.fromEntries(
@@ -43,11 +46,13 @@ export default function ReviewForm({ receipt }: { receipt: Editable }) {
       });
     } catch {
       setError("Couldn't reach the API. Check it's running, then try again.");
+      setSaving(false);
       return;
     }
     if (!res.ok) {
       const detail = (await res.json().catch(() => ({}))).detail;
       setError(typeof detail === "string" ? detail : "Some fields are invalid; check the values.");
+      setSaving(false);
       return;
     }
     router.push("/receipts?status=needs_review");
@@ -81,8 +86,11 @@ export default function ReviewForm({ receipt }: { receipt: Editable }) {
           ))}
         </select>
       </label>
-      <button className="mt-2 rounded bg-black px-4 py-2 text-white dark:bg-white dark:text-black">
-        Confirm
+      <button
+        disabled={saving}
+        className="mt-2 rounded bg-black px-4 py-2 text-white disabled:opacity-50 dark:bg-white dark:text-black"
+      >
+        {saving ? "Saving…" : "Confirm"}
       </button>
       {error && <p className="text-red-600">{error}</p>}
     </form>
