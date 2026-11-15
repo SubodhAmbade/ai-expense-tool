@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     environment: str = "development"
     cors_origins: list[str] = ["http://localhost:3000"]
     tax_profiles_path: Path = API_ROOT / "config" / "tax_profiles.yaml"
+    default_profile: str = "generic"  # region profile for uploads that don't name one
 
     supabase_url: str = ""
     supabase_service_role_key: str = ""

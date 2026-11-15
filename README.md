@@ -13,7 +13,7 @@ For setup, usage, architecture and design decisions, see the **[User and Archite
 2. **Extract**: merchant, date, amount, currency, tax.
 3. **Validate**: plain code checks that net + tax = total. Tax rates live in a per-region config.
 4. **Categorise**: keyword/merchant rules first, compared against a small local BERT model.
-5. **Review queue**: low-confidence items go to a person.
+5. **Review queue**: low-confidence items go to a person, who corrects and confirms them.
 6. **Export**: CSV or an API-style payload for accounting tools.
 
 ## Repo layout
@@ -27,29 +27,23 @@ supabase/
   migrations/ database schema
 data/
   receipts/   receipt images (git-ignored)
-  labels/     hand-labelled ground truth
+  labels/     category labels per merchant (AI-drafted, being verified)
 eval/         categoriser comparison
 ```
 
 ## Getting started (Windows)
 
-Requires Python 3.11+, Node 20+, and Git.
+Requires Python 3.13, Node 20+, Git and a free [Supabase](https://supabase.com) project.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\setup.ps1
 code .
 ```
 
-Then press **F5** and pick **Full stack** to run the API on http://localhost:8000
-(docs at `/docs`) and the web app on http://localhost:3000.
-
-Manual alternative:
-
-```powershell
-cd apps\api; python -m venv .venv; .\.venv\Scripts\pip install -r requirements-dev.txt
-.\.venv\Scripts\uvicorn app.main:app --reload
-cd ..\web; npm install; npm run dev
-```
+Run the three SQL files in `supabase/migrations/` in your Supabase project, put its URL and secret key
+in `apps/api/.env`, then press **F5** and pick **Full stack**: the API runs on http://localhost:8000
+(docs at `/docs`) and the web app on http://localhost:3000. Step-by-step instructions are in the
+[guide](docs/GUIDE.md#run-the-app-locally).
 
 ## Results so far
 
@@ -89,7 +83,7 @@ Caveat: the category labels were drafted by AI and are not yet human-verified, a
 partly with keyword rules, so the Rules row is inflated. The eval also reports the fair split
 (receipts whose merchant name does or doesn't reveal the category).
 
-Known failure modes: OCR misreads digits; totals picked from summary rows (some come out ~2× too
+Known extraction failure modes: OCR misreads digits; totals picked from summary rows (some come out ~2× too
 high); accounting-style negatives like `(0.01)` aren't read; merchant names that only appear in a logo.
 Some SROIE answers are themselves inconsistent (pre-rounding vs rounded totals, one labelled with the
 pre-tax amount).
@@ -109,5 +103,7 @@ for categories, `python ../../eval/categorise_eval.py`.
 - [x] OCR (RapidOCR) and rule-based extraction, with an eval against SROIE
 - [x] Validation engine: arithmetic, tax plausibility, cash, sanity checks; review routing
 - [x] Categoriser comparison: rules vs local BERT (zero-shot and with examples)
+- [x] Skeleton app: upload, review, confirm, CSV export; Supabase for data and photos
+- [ ] Login, then deploy
 - [ ] Week 2: baseline categoriser, labelled test set, model comparison
 - [ ] Week 3: UI, eval results, demo video
