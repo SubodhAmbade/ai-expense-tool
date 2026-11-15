@@ -235,6 +235,7 @@ docs/            this guide
 | Photos | Private bucket; the API hands out links that expire after 10 minutes | Receipts carry names, card digits and addresses |
 | Access rules | Row level security on, with no policies | Even a leaked public key reads nothing; per-user rules come with login |
 | Login | Built locally without it; added before any public deploy | Faster first slice, but no public version without it |
+| Failed saves | The uploaded photo is kept, never deleted on error | An interrupted save can still complete afterwards, so deleting could leave a receipt without its photo; a stray photo is harmless |
 | Processing | Inside the upload request, no job queue | Simplest; add a queue only if Render proves too slow |
 | Auto-accepted receipts | Stored as `confirmed` straight away | The checks are the confirmation; reviewers can still correct them |
 | Review page | Photo, reasons, editable fields; only those fields reach the browser | The OCR text and check details stay on the server |
@@ -304,6 +305,7 @@ money; region-specific values in YAML; every bug fix comes with a test.
 - [ ] Login (Supabase Auth) with per-user access rules
 - [ ] Deploy (Render + Vercel) and measure memory and speed there
 - [ ] Highlight where each value was read on the photo
+- [ ] Scheduled sweep: delete stored photos that no receipt references and are over a day old
 - [ ] A 60-second demo
 
 Known issues to address: unverified category labels, totals picked from summary rows (some ~2× too high), accounting-style

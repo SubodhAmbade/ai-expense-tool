@@ -1,6 +1,5 @@
 """Storage: the receipts table and the private photo bucket in Supabase. Server-side only."""
 
-from contextlib import suppress
 from functools import lru_cache
 from uuid import uuid4
 
@@ -29,17 +28,10 @@ class Store:
     def save(self, image: bytes, content_type: str, row: dict) -> dict:
         path = f"{uuid4()}{EXTENSIONS[content_type]}"
         _client().storage.from_(BUCKET).upload(path, image, {"content-type": content_type})
-        try:
-            return _client().table("receipts").insert({**row, "image_path": path}).execute().data[0]
-        except Exception:
-            # The row may have been saved before the connection failed, so only delete the photo
-            # when no receipt points at it. If even that check fails, keep it: a stray file is
-            # harmless, a receipt with a missing photo isn't. Either way, report the insert error.
-            with suppress(Exception):
-                saved = _client().table("receipts").select("id").eq("image_path", path).execute()
-                if not saved.data:
-                    _client().storage.from_(BUCKET).remove([path])
-            raise
+        # If the insert fails, the photo is deliberately left in place: an interrupted insert can
+        # still commit afterwards, so deleting now could leave a receipt pointing at nothing. A
+        # stray photo is harmless; a later sweep can remove photos no receipt references.
+        return _client().table("receipts").insert({**row, "image_path": path}).execute().data[0]
 
     def list(self, status: str | None) -> list[dict]:
         rows: list[dict] = []

@@ -5,10 +5,10 @@ from app.store import PAGE, Store
 
 
 class FakeQuery:
-    """Just enough of the Supabase query builder to test paging and cleanup."""
+    """Just enough of the Supabase query builder to test paging and saving."""
 
     def __init__(self, db: "FakeClient") -> None:
-        self.db, self.filters, self.rows = db, {}, None
+        self.db = db
 
     def select(self, *_):
         return self
@@ -16,8 +16,7 @@ class FakeQuery:
     def order(self, *_, **__):
         return self
 
-    def eq(self, column, value):
-        self.filters[column] = value
+    def eq(self, *_):
         return self
 
     def range(self, start: int, end: int):
@@ -35,10 +34,6 @@ class FakeQuery:
         return self
 
     def execute(self):
-        if self.rows is None:  # a lookup such as select("id").eq("image_path", path)
-            self.rows = [
-                r for r in self.db.rows if all(r.get(k) == v for k, v in self.filters.items())
-            ]
         self.data = self.rows
         return self
 
@@ -49,9 +44,6 @@ class FakeBucket:
 
     def upload(self, path, *_):
         self.db.photos.add(path)
-
-    def remove(self, paths):
-        self.db.photos -= set(paths)
 
 
 class FakeClient:
@@ -77,10 +69,10 @@ def test_list_pages_past_the_supabase_row_limit_newest_first(monkeypatch) -> Non
     assert fake.ranges == [(0, PAGE - 1), (PAGE, 2 * PAGE - 1), (2 * PAGE, 3 * PAGE - 1)]
 
 
-def test_failed_insert_removes_the_photo_only_when_no_receipt_uses_it(monkeypatch) -> None:
-    for error, photo_kept in (("before_save", False), ("after_save", True)):
+def test_failed_insert_keeps_the_photo_and_reports_the_error(monkeypatch) -> None:
+    for error in ("before_save", "after_save"):  # from outside, these look the same
         fake = FakeClient(insert_error=error)
         monkeypatch.setattr(store_module, "_client", lambda fake=fake: fake)
         with pytest.raises(RuntimeError):
             Store().save(b"img", "image/png", {"status": "confirmed"})
-        assert bool(fake.photos) is photo_kept, error
+        assert len(fake.photos) == 1, error
