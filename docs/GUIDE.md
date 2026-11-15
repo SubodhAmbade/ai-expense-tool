@@ -82,6 +82,14 @@ The eval prints per-field accuracy, how many receipts validation would auto-acce
 those are right, and every miss.
 
 ```powershell
+# Error analysis on the development receipts only (first and last receipt number)
+.\.venv\Scripts\python ..\..\eval\label_mining.py ..\..\data\receipts\sroie 0 349
+```
+
+It reports which labels sit on the lines holding the true total, why each total was missed, and
+how many receipts add a service charge. Change rules from this report, never from test receipts.
+
+```powershell
 # 3. Compare the categorisers (needs data/receipts/sroie_ocr_text.jsonl; about a minute)
 .\.venv\Scripts\python ..\..\eval\categorise_eval.py
 ```
@@ -149,6 +157,7 @@ flowchart LR
 | `app/routers/receipts.py` | HTTP ↔ pipeline and store | The five endpoints below |
 | `apps/web/src/app/` | browser | Sidebar shell; dashboard with drop zone and month summary; review queue; all receipts; review page with Confirm & next; export; policy (planned rules) |
 | `eval/extract_eval.py` | folder of `.ocr.json` + SROIE keys → report | Scores extraction and validation |
+| `eval/label_mining.py` | folder of `.ocr.json` + SROIE keys → report | Which lines hold the true total, why each miss happened, how many receipts add a service charge |
 | `eval/categorise_eval.py` | OCR text + category labels → report | Compares the categorisers on unseen merchants |
 
 Each stage depends only on the previous stage's output model, never on its internals. Swapping the
@@ -218,7 +227,10 @@ docs/            this guide
 | Preprocessing | Minimal: rotation fix, RGB, resize | Modern OCR models handle the rest; add more only if measurements show a need |
 | Extraction | Deterministic rules, no LLM | Explainable ("matched TOTAL ROUNDED on row 23"), free, fast, testable. AI is reserved for categorisation |
 | Total definition | Amount paid, after rounding | What actually left the wallet; matches SROIE's answers |
-| Rounding | A rounding row *below* the total is added; one *above* is already included | Learned from the data: receipts print both layouts |
+| Rounding | A rounding row *below* the total is added; one *above* is already included. An adjustment must be under 0.10; a larger "ROUNDING" amount within 0.10 of the total *is* the rounded total | Learned from the data: receipts print both layouts, and "ROUNDING RM 45.35" caused the ~2× totals |
+| Total rules | "TOTAL AFTER ADJ" ranks with "TOTAL ROUNDED"; a total is never 0.00; rows after a GST summary heading and "TOTAL INCLUDED GST @ 6%" lines are ignored | Each came from a miss on the development receipts; the summary rule held on all 200 receipts that print one |
+| OCR slips | "TOTAL" and "PAYABLE" match through one wrong letter (TATAL, TOTAI, POYABLE) | Six development misses; nothing else in the rules relies on near-matches |
+| Service charge | Not a separate field | Only 9 of 350 development receipts add one, and just 2 of those fail the arithmetic check |
 | Currency | Never assumed. A bare `$`, or no symbol at all, means low confidence → review | Expense tools see travel receipts, where a missing symbol often means a foreign currency |
 | Date order | Per profile; `unknown` for generic | `03/04` can't be resolved without knowing the region |
 | Region for SROIE | `my` profile (GST 6% Apr 2015 to May 2018; SST from Sep 2018) | Under `generic`, 29 of 100 receipts went to review only because of date or currency ambiguity |
@@ -260,7 +272,11 @@ has its correct company, date, address and total.
 - **What matters most** is the accuracy of *auto-accepted* receipts, because those skip human
   review. A lower auto-accept rate is acceptable; wrong auto-accepts are not.
 - **Known dataset noise:** some SROIE totals are the pre-rounding amount, others the rounded one;
-  at least one is the pre-tax amount.
+  at least one is the pre-tax amount, and after a coupon some give the subtotal rather than what was
+  paid. Where the receipt clearly shows the amount paid, we keep our definition and count the miss.
+- **Error analysis before rules.** `eval/label_mining.py` lists, for every development receipt,
+  which lines print the true total and why a miss happened. Rule changes are made from that report
+  only, then scored once on the test receipts.
 
 **Categories** are scored differently, because SROIE has no category answers:
 
@@ -314,8 +330,9 @@ money; region-specific values in YAML; every bug fix comes with a test.
 - [ ] Deploy (Render + Vercel) and measure memory and speed there
 - [ ] Highlight where each value was read on the photo
 - [ ] Scheduled sweep: delete stored photos that no receipt references and are over a day old
+- [x] Error analysis of missed totals (`eval/label_mining.py`) and the fixes it pointed to
+- [ ] Own receipt dataset, collected and labelled with a datasheet (on Kaggle or Colab)
 - [ ] A 60-second demo
 
-Known issues to address: unverified category labels, totals picked from summary rows (some ~2× too high), accounting-style
-negatives like `(0.01)`, merchant names that only appear in a logo, OCR speed on Render's free tier,
+Known issues to address: unverified category labels, accounting-style negatives like `(0.01)`, merchant names that only appear in a logo, OCR speed on Render's free tier,
 and no tests yet on phone photos (SROIE receipts are scans).

@@ -56,17 +56,23 @@ Rules were developed on receipts 000–349, then frozen and measured once on 350
 |---|---|---|---|
 | Merchant | 95% | 87% | 99% |
 | Date | 100% | 92% | 100% |
-| Total | 87% | 94% | 89% |
+| Total | 92% | 93% | 96% |
+
+Error analysis on the development receipts (`eval/label_mining.py`) found the misses came from
+how rules were applied, not missing keywords: a rounded total read as a rounding adjustment (the
+~2× totals), "TOTAL AFTER ADJ" excluded, one-letter OCR slips ("TATAL"), and tax lines or the
+GST summary table mistaken for the total. Fixing those took the test-set total from 87% to 92%
+with no extra wrong auto-accepts.
 
 **Validate** (plain-code checks; a total is only accepted when `subtotal + tax` or `cash − change` confirms it):
 
 | | |
 |---|---|
-| Receipts auto-accepted | 29% |
-| Totals correct among auto-accepted | 97% (28 of 29) |
-| Merchant + date + total all correct among auto-accepted | 93% (26 of 28 with full answers) |
+| Receipts auto-accepted | 31% |
+| Totals correct among auto-accepted | 97% (30 of 31) |
+| Merchant + date + total all correct among auto-accepted | 93% (28 of 30 with full answers) |
 
-The other 71% go to review with a stated reason. Most common: total not confirmed by any check,
+The other 69% go to review with a stated reason. Most common: total not confirmed by any check,
 no currency printed (currency is never assumed), low-confidence merchant.
 
 **Categorise** (suggestions only; a person can always change them). Compared on 201 receipts from 76
@@ -104,6 +110,7 @@ for categories, `python ../../eval/categorise_eval.py`.
 - [x] Validation engine: arithmetic, tax plausibility, cash, sanity checks; review routing
 - [x] Categoriser comparison: rules vs local BERT (zero-shot and with examples)
 - [x] Skeleton app: upload, review, confirm, CSV export; Supabase for data and photos
+- [x] Error analysis of missed totals; rounding, typo and tax-summary rules
 - [ ] Login, then deploy
 - [ ] Week 2: baseline categoriser, labelled test set, model comparison
 - [ ] Week 3: UI, eval results, demo video

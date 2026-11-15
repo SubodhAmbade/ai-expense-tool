@@ -7,6 +7,7 @@ from, so low-confidence values can go to review and the UI can highlight their s
 import re
 from datetime import date
 from decimal import Decimal
+from difflib import get_close_matches
 from typing import Generic, TypeVar
 
 from pydantic import BaseModel
@@ -21,7 +22,13 @@ AMOUNT = re.compile(r"(?<![\d.,])\d{1,3}(?:,\d{3})*\.\d{2}(?![\d%])|(?<![\d.,])\
 
 # Ranked total rules: (pattern, rule confidence). The first rule with a match wins.
 TOTAL_RULES = [
-    (re.compile(r"ROUND\w*\s*\w?\s*TOTAL|TOTAL\s*(AMT\s*|AMOUNT\s*)?ROUND"), 1.0),
+    (
+        re.compile(
+            r"ROUND\w*\s*\w?\s*TOTAL|TOTAL\s*(AMT\s*|AMOUNT\s*)?ROUND|"
+            r"AFTER\s*(ROUND\w*\s*)?(ADJ|ROUND)"  # "TOTAL AFTER ADJ INCL GST"
+        ),
+        1.0,
+    ),
     (
         re.compile(
             r"N\s*ETT?\s*TOTAL|GRAND\s*TOTAL|TOTAL\s*(AMOUNT|AMT|PAYABLE|SALES|INCL|DUE)|(AMT|AMOUNT|BALANCE)\s*DUE|NETT?\s*AMT"
@@ -33,10 +40,17 @@ TOTAL_RULES = [
 CASH_RULES = [(re.compile(r"\b(CASH|VISA|MASTER\w*|CARD|PAID|PAYMENT|TENDER\w*)\b"), 0.6)]
 CHANGE_RULES = [(re.compile(r"\bCHANGE\b"), 0.9)]
 NOT_TOTAL = re.compile(
-    r"SUB\s*-?\s*TOTA|EXCL|TOTAL\s*Q|QTY|ITEM|DISC|SAV|CHANGE|ADJ|TOTAL\s*(GST|TAX|SST|VAT)|(GST|TAX|SST|VAT)\s*TOTAL"
+    r"SUB\s*-?\s*TOTA|EXCL|TOTAL\s*Q|QTY|ITEM|DISC|SAV|CHANGE|(?<!AFTER )(?<!ROUNDING )ADJ|"
+    # "(TOTAL INCLUDED GST @ 6% 1.42)" is the tax, not the total
+    r"TOTAL\s*(GST|TAX|SST|VAT)|(GST|TAX|SST|VAT)\s*TOTAL|INCLUDED\s*(GST|TAX)"
 )
+# The per-tax-code table printed below the total; it repeats amounts that aren't the total.
+TAX_SUMMARY = re.compile(r"(GST|TAX|SST)\s*SUMMARY|SUMMARY\s*(OF\s*)?(GST|TAX)")
+KEYWORDS = ("TOTAL", "PAYABLE")  # read through one-letter OCR slips: TATAL, TOTAI, POYABLE
+WORD = re.compile(r"\b[A-Z]{4,7}\b")
+ROUNDING_MAX = Decimal("0.10")  # cash rounding moves a total by a few cents, never more
 ROUNDING = re.compile(r"ROUND\w*\s*(ADJ|\(|:|-?\d|RM)")  # an adjustment row, not a rounded total
-SIGNED_AMOUNT = re.compile(r"(-?)\s*(\d+\.\d{2})\s*$")
+SIGNED_AMOUNT = re.compile(r"(-?)\s*(\d*\.\d{2})\s*$")  # "-0.02", ".01"
 SUBTOTAL_RULES = [(re.compile(r"SUB\s*-?\s*TOTA|TOTAL\s*EXCL|AMOUNT\s*EXCL"), 0.85)]
 TAX_RULES = [
     (re.compile(r"TOTAL\s*(GST|TAX|VAT|SST)|(GST|TAX|VAT|SST)\s*(AMOUNT|AMT|TOTAL)"), 0.85),
@@ -93,7 +107,9 @@ class ExtractResult(BaseModel):
     currency: Field[str]  # ISO 4217; confidence 0.5 when taken from the profile default
 
 
-def _find_amount(rows: list[str], conf: list[float], rules, exclude=None) -> Field[Decimal]:
+def _find_amount(
+    rows: list[str], conf: list[float], rules, exclude=None, positive=False
+) -> Field[Decimal]:
     for pattern, weight in rules:
         hits = []
         for i, row in enumerate(rows):
@@ -104,7 +120,9 @@ def _find_amount(rows: list[str], conf: list[float], rules, exclude=None) -> Fie
             if not amounts and AMOUNT.fullmatch(next_row):
                 amounts, i = [next_row], i + 1  # label and amount on separate rows
             if amounts:  # the amount is the right-most number on the row
-                hits.append((Decimal(amounts[-1].replace(",", "")), i))
+                value = Decimal(amounts[-1].replace(",", ""))
+                if value > 0 or not positive:  # a total is never 0.00 (change can be)
+                    hits.append((value, i))
         if hits:
             value, i = max(hits)  # the largest candidate; smaller ones are usually part-payments
             return Field(value=value, confidence=round(weight * conf[i], 3), source_row=i)
@@ -112,7 +130,9 @@ def _find_amount(rows: list[str], conf: list[float], rules, exclude=None) -> Fie
 
 
 def _total(rows: list[str], conf: list[float], cash: Field, change: Field) -> Field[Decimal]:
-    total = _find_amount(rows, conf, TOTAL_RULES, NOT_TOTAL)
+    # The tax summary table repeats totals per tax code; the receipt's total is always above it.
+    end = next((i for i, row in enumerate(rows) if TAX_SUMMARY.search(row)), len(rows))
+    total = _find_amount(rows[:end], conf, TOTAL_RULES, NOT_TOTAL, positive=True)
     if total.value is None and cash.value is not None:  # no total printed: paid = cash - change
         # a misread change can make this <= 0; the sanity check then sends it to review
         paid = cash.value - (change.value or 0)
@@ -120,7 +140,11 @@ def _total(rows: list[str], conf: list[float], cash: Field, change: Field) -> Fi
     if total.value is not None and not TOTAL_RULES[0][0].search(rows[total.source_row]):
         for row in rows[total.source_row + 1 :]:  # a rounding row below the total: add it
             if ROUNDING.search(row) and (m := SIGNED_AMOUNT.search(row)):
-                total.value += Decimal(m.group(1) + m.group(2))
+                amount = Decimal(m.group(1) + m.group(2))
+                if abs(amount) < ROUNDING_MAX:  # an adjustment: add it
+                    total.value += amount
+                elif abs(amount - total.value) < ROUNDING_MAX:  # "ROUNDING RM 45.35": the total
+                    total.value = amount
                 break
     return total
 
@@ -191,9 +215,13 @@ def _date(rows: list[str], conf: list[float], profile: TaxProfile) -> Field[date
     return Field()
 
 
+def _keyword(m: re.Match) -> str:
+    return (get_close_matches(m.group(), KEYWORDS, n=1, cutoff=0.8) or [m.group()])[0]
+
+
 def extract(ocr: OcrResult, profile: TaxProfile) -> ExtractResult:
     raw = [" ".join(r.split()) for r in ocr.text.splitlines()]  # collapse repeated spaces
-    rows = [r.upper() for r in raw]
+    rows = [WORD.sub(_keyword, r.upper()) for r in raw]
     conf = [
         min((ln.confidence for ln in ocr.lines if ln.row == i), default=0.0)
         for i in range(len(rows))

@@ -70,3 +70,59 @@ def test_tax_label_with_total_after_the_tax_name() -> None:
         assert result.tax.value == Decimal("0.51"), label
     with_gst = extract(ocr("Total with GST 41.48"), PROFILES["my"])  # a total, not the tax
     assert with_gst.tax.value is None
+
+
+def test_rounded_total_printed_on_a_rounding_row() -> None:
+    # SROIE 186: "ROUNDING RM 45.35" is the rounded total, not a 45.35 adjustment to add.
+    result = extract(
+        ocr(
+            "TOTAL SALES (INCLUSIVE GST) RM 45.34",
+            "ROUNDING ADJUSTMENT RM .01",
+            "ROUNDING RM 45.35",
+        ),
+        PROFILES["my"],
+    )
+    assert result.total.value == Decimal("45.35")
+
+
+def test_misread_rounding_adjustment_is_ignored() -> None:
+    # Rounding moves a total by cents; "6.01" is an OCR slip for "0.01".
+    result = extract(ocr("TOTAL SALES INCL GST 46.54", "ROUNDING ADJ 6.01"), PROFILES["my"])
+    assert result.total.value == Decimal("46.54")
+
+
+def test_total_after_adjustment_wins() -> None:
+    result = extract(
+        ocr("TOTAL SALES INCL GST 46.54", "ROUNDING ADJ 0.01", "TOTAL AFTER ADJ INCL GST 46.55"),
+        PROFILES["my"],
+    )
+    assert result.total.value == Decimal("46.55")
+
+
+def test_zero_amount_is_never_the_total() -> None:
+    # SROIE 091: two OCR rows merged, leaving 0.00 as the right-most amount on the rule's row.
+    result = extract(
+        ocr("TOTAL 85.10", "ROUNDING ADJUSTMENT TOTAL AFTER ROUNDING 85.10 0.00"), PROFILES["my"]
+    )
+    assert result.total.value == Decimal("85.10")
+
+
+def test_one_letter_ocr_slips_in_keywords() -> None:
+    assert extract(
+        ocr("TATAL SALES INCLUSIVE OF GST 32.70"), PROFILES["my"]
+    ).total.value == Decimal("32.70")
+    assert extract(ocr("TOTEL AMT POYABLE 8.50"), PROFILES["my"]).total.value == Decimal("8.50")
+
+
+def test_tax_lines_and_tax_summary_are_not_the_total() -> None:
+    result = extract(
+        ocr(
+            "PAY 25.15",
+            "(TOTAL INCLUDED GST @ 6% 1.42)",  # the tax, not the total
+            "GST SUMMARY AMOUNT TAX",
+            "SR @ 6% 23.73 1.42",
+            "TOTAL 23.73 1.42",  # the summary table's own total row
+        ),
+        PROFILES["my"],
+    )
+    assert result.total.value is None  # nothing safe to read: review, not a wrong number
