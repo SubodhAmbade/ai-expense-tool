@@ -70,9 +70,8 @@ export default function ReviewForm({ receipt, nextHref }: { receipt: Editable; n
       setSaving(false);
       return;
     }
-    if (!active.current) return;
-    router.push(nextHref);
-    router.refresh(); // the sidebar count and the queue position change
+    if (active.current) router.push(nextHref); // not if the reviewer has already moved on
+    router.refresh(); // the sidebar count changes either way
   }
 
   return (
