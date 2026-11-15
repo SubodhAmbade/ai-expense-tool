@@ -22,8 +22,8 @@ The core rule: **a deterministic engine handles the numbers; AI only makes sugge
 receipt is either auto-accepted, because independent checks agree, or sent to a person with
 the reason it needs a look. Nothing is silently guessed.
 
-Current status: OCR, extraction, validation and categorisation work from the command line. Results
-are in the [README](../README.md#results-so-far). The API endpoints and web UI are next.
+Current status: the full loop works locally: upload a photo, review what needs a look, confirm,
+export CSV. Results are in the [README](../README.md#results-so-far). Login and deployment are next.
 
 ## 2. Using it
 
@@ -39,7 +39,33 @@ Or step by step: create `apps\api\.venv` with `py -3.13 -m venv .venv`, install
 `requirements-dev.txt`, then `npm install` in `apps\web`. In VS Code, select the interpreter at
 `apps\api\.venv\Scripts\python.exe`.
 
-### Process receipts
+### Run the app locally
+
+One-time Supabase setup (free tier):
+
+1. Create a project at [supabase.com](https://supabase.com). Pick the region closest to you and save
+   the database password somewhere safe.
+2. In the dashboard's **SQL Editor**, run the files in `supabase/migrations/` in order: `0001`, `0002`,
+   `0003`. The last one creates the private `receipts` photo bucket.
+3. Under **Project Settings → API keys**, copy the project URL and the secret (service role) key into
+   `apps/api/.env` as `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. That key bypasses all access
+   rules: keep it in `.env` (git-ignored), never in the web app.
+
+Then start both halves, each in its own terminal (or press F5 and pick **Full stack**):
+
+```powershell
+# apps\api
+.\.venv\Scripts\python -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python -m uvicorn app.main:app --reload
+
+# apps\web
+npm run dev
+```
+
+Open http://localhost:3000, upload a receipt, and you land on its review page. API docs are at
+http://localhost:8000/docs.
+
+### Process receipts from the command line
 
 From `apps\api`:
 
@@ -102,9 +128,10 @@ flowchart LR
     P[(tax_profiles.yaml)] --> C
     P --> D
     D -->|auto_accept| E[Categorise<br/>app/categorise.py]
-    D -->|needs_review| R[Review queue<br/>planned]
+    D -->|needs_review| R[Review page<br/>apps/web]
     R --> E
-    E --> X[Export CSV / API<br/>planned]
+    E --> S[(Supabase<br/>table + photo bucket)]
+    S --> X[Export CSV<br/>/receipts/export.csv]
 ```
 
 ### Modules
@@ -116,6 +143,10 @@ flowchart LR
 | `app/validate.py` | `ExtractResult` + profile → `ValidationResult` | Five checks; decides auto-accept vs review |
 | `app/categorise.py` | receipt text → `Suggestion` | Three methods: `by_rules`, `by_description` (zero-shot), `by_examples` (nearest labelled receipts) |
 | `app/tax_profiles.py` | YAML → `TaxProfile` | Loads and validates region profiles |
+| `app/pipeline.py` | photo bytes + profile → row | Runs OCR → extract → validate → categorise; adds a review reason for a low-confidence category |
+| `app/store.py` | rows and photos ↔ Supabase | The only module that talks to Supabase; tests swap it for an in-memory store |
+| `app/routers/receipts.py` | HTTP ↔ pipeline and store | The five endpoints below |
+| `apps/web/src/app/` | browser | Upload page, receipts list with filters, review page with the editable form |
 | `eval/extract_eval.py` | folder of `.ocr.json` + SROIE keys → report | Scores extraction and validation |
 | `eval/categorise_eval.py` | OCR text + category labels → report | Compares the categorisers on unseen merchants |
 
@@ -131,6 +162,19 @@ OCR engine means rewriting `ocr.py` only.
 - **`Suggestion`**: `category`, `confidence`, `source` (`rule`, `description` or `examples`). Always a suggestion; a person can override it.
 
 Money is `Decimal` everywhere and `numeric` in the database. There is no float arithmetic on amounts.
+
+### API endpoints
+
+| Method and path | Does |
+|---|---|
+| `POST /receipts?profile=my` | Upload a JPEG, PNG or WebP (≤ 10 MB); runs the pipeline; saves the photo and the row |
+| `GET /receipts?status=needs_review` | List receipts, newest first; `status` is optional |
+| `GET /receipts/{id}` | One receipt, plus a photo link valid for 10 minutes |
+| `PATCH /receipts/{id}` | Save a reviewer's corrections and mark the receipt confirmed |
+| `GET /receipts/export.csv` | Confirmed receipts: id, date, merchant, category, currency, subtotal, tax, total |
+
+Status: `confirmed` means every check agreed (no person needed) or a reviewer saved it;
+`needs_review` lists the reasons in `validation_errors`. A changed category is recorded as `human`.
 
 ### Validation checks
 
@@ -152,12 +196,13 @@ date and currency each have confidence ≥ 0.8.
 
 ```
 apps/api/        FastAPI backend (Render)
-  app/           ocr.py, extract.py, validate.py, tax_profiles.py, config.py, main.py
+  app/           ocr.py, extract.py, validate.py, categorise.py, tax_profiles.py, config.py, main.py
   config/        tax_profiles.yaml
   tests/         pytest, one file per module
-apps/web/        Next.js frontend (Vercel); status page for now
+apps/web/        Next.js frontend (Vercel): upload, receipts list, review page
 supabase/        database migrations
 data/receipts/   receipt images and OCR output (git-ignored: may contain personal data)
+data/labels/     category labels per merchant (committed, no receipt text)
 eval/            evaluation scripts
 docs/            this guide
 ```
@@ -185,6 +230,16 @@ docs/            this guide
 | Zero-shot | Measured, not used | 5% accuracy: a small embedding model can't match raw receipt text to one-line category descriptions |
 | Categoriser in the app | Rules first; BERT + examples once Render memory is measured | Rules are instant and need nothing loaded; BERT is 74% on unseen merchants and ready to switch on |
 | Category labels | AI-drafted, flagged rows awaiting human review | Faster to start; verifying them is the next step for honest numbers |
+| Database and photos | One free Supabase cloud project for local dev and the demo | No Docker on Windows; the same setup serves the deployed app |
+| Data access | The browser never talks to Supabase; only the API does, with the secret key | Keys stay on the server, and every write goes through the same validation |
+| Photos | Private bucket; the API hands out links that expire after 10 minutes | Receipts carry names, card digits and addresses |
+| Access rules | Row level security on, with no policies | Even a leaked public key reads nothing; per-user rules come with login |
+| Login | Built locally without it; added before any public deploy | Faster first slice, but no public version without it |
+| Failed saves | The uploaded photo is kept, never deleted on error | An interrupted save can still complete afterwards, so deleting could leave a receipt without its photo; a stray photo is harmless |
+| Processing | Inside the upload request, no job queue | Simplest; add a queue only if Render proves too slow |
+| Auto-accepted receipts | Stored as `confirmed` straight away | The checks are the confirmation; reviewers can still correct them |
+| Review page | Photo, reasons, editable fields; only those fields reach the browser | The OCR text and check details stay on the server |
+| Export | CSV of confirmed receipts; merchant names starting with `= + - @` are quoted | Opens in Excel and imports anywhere; stops spreadsheet formula injection |
 
 ## 5. How we measure
 
@@ -235,6 +290,8 @@ money; region-specific values in YAML; every bug fix comes with a test.
 | Commits show the wrong author | Global git identity belongs to another account | `git config user.name` / `user.email` in this repo |
 | A file Claude updated reverted itself | It was open in VS Code and the old buffer was saved | Close the tab before files are updated, reopen after |
 | "Nothing to compare" when opening a PR | The commit went straight to `main` | Branch before committing |
+| API error "Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY" | `apps/api/.env` is missing the Supabase values | Copy them from the Supabase dashboard (see Run the app locally) and restart the API |
+| Web page says it couldn't load receipts | The API isn't running, or runs on another port | Start uvicorn in `apps\api`; the web app expects http://localhost:8000 |
 | VS Code or the laptop froze during the category eval | The embedding model was given too many receipts at once and ran out of memory | Fixed: receipts are embedded one at a time. If it recurs, end `python.exe` in Task Manager |
 
 ## 8. Roadmap
@@ -244,9 +301,12 @@ money; region-specific values in YAML; every bug fix comes with a test.
 - [x] Validate: five checks, review routing, Malaysia profile
 - [x] Categorise: rules vs local BERT (zero-shot and with examples), split by merchant
 - [ ] Verify the 70 flagged category labels
-- [ ] Review queue UI (Next.js)
-- [ ] Export: CSV and API payload
-- [ ] Deploy (Render + Vercel + Supabase) and a 60-second demo
+- [x] Skeleton: upload, review page, confirm, CSV export (Supabase storage)
+- [ ] Login (Supabase Auth) with per-user access rules
+- [ ] Deploy (Render + Vercel) and measure memory and speed there
+- [ ] Highlight where each value was read on the photo
+- [ ] Scheduled sweep: delete stored photos that no receipt references and are over a day old
+- [ ] A 60-second demo
 
 Known issues to address: unverified category labels, totals picked from summary rows (some ~2× too high), accounting-style
 negatives like `(0.01)`, merchant names that only appear in a logo, OCR speed on Render's free tier,
