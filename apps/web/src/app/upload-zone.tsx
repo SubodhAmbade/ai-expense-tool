@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type DragEvent, useState } from "react";
+import { type DragEvent, useRef, useState } from "react";
 import { API_URL } from "@/lib/api";
 
 type Item = {
@@ -20,16 +20,23 @@ export default function UploadZone() {
   const [profile, setProfile] = useState("my");
   const [dragging, setDragging] = useState(false);
 
+  // One shared queue and one worker: reading a receipt is CPU-heavy and the API runs on a
+  // small server, so a second drop joins the queue instead of starting a parallel upload.
+  const queue = useRef<{ key: string; file: File; profile: string }[]>([]);
+  const busy = useRef(false);
+
   const update = (key: string, patch: Partial<Item>) =>
     setItems((prev) => prev.map((it) => (it.key === key ? { ...it, ...patch } : it)));
 
-  // One file at a time: reading a receipt is CPU-heavy and the API runs on a small server.
   async function upload(files: File[]) {
-    if (files.length === 0) return;
-    const batch: Item[] = files.map((f, i) => ({ key: `${Date.now()}-${i}`, name: f.name, state: "waiting" }));
-    setItems((prev) => [...batch, ...prev]);
-    for (const [i, file] of files.entries()) {
-      const { key } = batch[i];
+    const batch = files.map((file) => ({ key: crypto.randomUUID(), file, profile }));
+    setItems((prev) => [...batch.map(({ key, file }): Item => ({ key, name: file.name, state: "waiting" })), ...prev]);
+    queue.current.push(...batch);
+    if (busy.current) return; // the running worker will pick these up
+    busy.current = true;
+    let next;
+    while ((next = queue.current.shift())) {
+      const { key, file, profile } = next;
       update(key, { state: "reading" });
       try {
         const form = new FormData();
@@ -49,6 +56,7 @@ export default function UploadZone() {
         update(key, { state: "failed", error });
       }
     }
+    busy.current = false;
     router.refresh(); // new counts on the dashboard and in the sidebar
   }
 

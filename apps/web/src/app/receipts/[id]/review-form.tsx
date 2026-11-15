@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { API_URL, CATEGORIES, label, type Receipt } from "@/lib/api";
 
 const FIELDS = [
@@ -26,12 +26,18 @@ export default function ReviewForm({ receipt, nextHref }: { receipt: Editable; n
   const router = useRouter();
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [attested, setAttested] = useState(false); // a person vouches for every receipt they confirm
   const hasNext = nextHref !== "/review";
 
-  // Load the next receipt in the background so "Confirm & next" opens it straight away.
+  // False once this form is gone (the reviewer moved to another receipt mid-save), so a late
+  // save doesn't drag them back. The <Link>s already prefetch the next receipt.
+  const active = useRef(true);
   useEffect(() => {
-    router.prefetch(nextHref);
-  }, [router, nextHref]);
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
 
   // onSubmit rather than a form action: a form action clears the reviewer's edits even when saving fails.
   async function save(event: FormEvent<HTMLFormElement>) {
@@ -64,6 +70,7 @@ export default function ReviewForm({ receipt, nextHref }: { receipt: Editable; n
       setSaving(false);
       return;
     }
+    if (!active.current) return;
     router.push(nextHref);
     router.refresh(); // the sidebar count and the queue position change
   }
@@ -88,16 +95,31 @@ export default function ReviewForm({ receipt, nextHref }: { receipt: Editable; n
           </select>
         </label>
       </div>
+      {/* No name, so it isn't sent: confirming is the record. `required` also stops Enter from skipping it. */}
+      <label className="flex min-h-11 items-center gap-3 font-medium text-gray-800">
+        <input
+          type="checkbox"
+          required
+          checked={attested}
+          onChange={(e) => setAttested(e.target.checked)}
+          className="size-5 accent-blue-700"
+        />
+        I confirm these details match the receipt
+      </label>
       {error && <p className="text-red-700">{error}</p>}
       <div className="mt-auto flex flex-wrap items-center justify-end gap-3 border-t border-gray-100 pt-4">
-        <span className="mr-auto text-xs text-gray-500">Enter saves</span>
         {hasNext && (
-          <Link href={nextHref} className="flex min-h-11 items-center rounded-lg border border-gray-300 px-4 font-medium hover:bg-gray-50">
+          <Link
+            href={nextHref}
+            aria-disabled={saving}
+            onClick={(e) => saving && e.preventDefault()} // skipping mid-save would race the save's own move on
+            className={`flex min-h-11 items-center rounded-lg border border-gray-300 px-4 font-medium hover:bg-gray-50 ${saving ? "pointer-events-none opacity-50" : ""}`}
+          >
             Skip
           </Link>
         )}
         <button
-          disabled={saving}
+          disabled={saving || !attested}
           className="min-h-11 rounded-lg bg-blue-700 px-5 font-semibold text-white hover:bg-blue-800 disabled:opacity-50"
         >
           {saving ? "Saving…" : hasNext ? "Confirm & next" : "Confirm"}
