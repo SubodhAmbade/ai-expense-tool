@@ -62,7 +62,8 @@ Then start both halves, each in its own terminal (or press F5 and pick **Full st
 npm run dev
 ```
 
-Open http://localhost:3000, upload a receipt, and you land on its review page. API docs are at
+Open http://localhost:3000 and drop receipts on the dashboard. Each one is read in turn; ones that fail a
+check land in the **Review queue**, where **Confirm & next** walks through them. API docs are at
 http://localhost:8000/docs.
 
 ### Process receipts from the command line
@@ -146,7 +147,7 @@ flowchart LR
 | `app/pipeline.py` | photo bytes + profile → row | Runs OCR → extract → validate → categorise; adds a review reason for a low-confidence category |
 | `app/store.py` | rows and photos ↔ Supabase | The only module that talks to Supabase; tests swap it for an in-memory store |
 | `app/routers/receipts.py` | HTTP ↔ pipeline and store | The five endpoints below |
-| `apps/web/src/app/` | browser | Upload page, receipts list with filters, review page with the editable form |
+| `apps/web/src/app/` | browser | Sidebar shell; dashboard with drop zone and month summary; review queue; all receipts; review page with Confirm & next; export; policy (planned rules) |
 | `eval/extract_eval.py` | folder of `.ocr.json` + SROIE keys → report | Scores extraction and validation |
 | `eval/categorise_eval.py` | OCR text + category labels → report | Compares the categorisers on unseen merchants |
 
@@ -199,7 +200,7 @@ apps/api/        FastAPI backend (Render)
   app/           ocr.py, extract.py, validate.py, categorise.py, tax_profiles.py, config.py, main.py
   config/        tax_profiles.yaml
   tests/         pytest, one file per module
-apps/web/        Next.js frontend (Vercel): upload, receipts list, review page
+apps/web/        Next.js frontend (Vercel): dashboard, review queue, receipts, export, policy
 supabase/        database migrations
 data/receipts/   receipt images and OCR output (git-ignored: may contain personal data)
 data/labels/     category labels per merchant (committed, no receipt text)
@@ -240,6 +241,11 @@ docs/            this guide
 | Auto-accepted receipts | Stored as `confirmed` straight away | The checks are the confirmation; reviewers can still correct them |
 | Review page | Photo, reasons, editable fields; only those fields reach the browser | The OCR text and check details stay on the server |
 | Export | CSV of confirmed receipts; merchant names starting with `= + - @` are quoted | Opens in Excel and imports anywhere; stops spreadsheet formula injection |
+| Layout | Sidebar app (option A of two mocked up), always light | Picked over an inbox layout so opening the app shows a summary, not a receipt |
+| Uploads | Several at once, sent one after another, each with its own status | Reading is CPU-heavy on a small server; one bad file doesn't stop the rest |
+| Review flow | Confirm & next, oldest first; the next receipt is fetched in the background | Reviewing ten receipts no longer means going back to the list each time |
+| Dashboard money | Spend shown per currency, never added across currencies | Currency is never assumed, so MYR and CHF can't be summed |
+| Auto-accepted rate | Confirmed receipts with no `confirmed_at` (no person touched them) | The checks confirmed them on upload |
 
 ## 5. How we measure
 
@@ -302,7 +308,9 @@ money; region-specific values in YAML; every bug fix comes with a test.
 - [x] Categorise: rules vs local BERT (zero-shot and with examples), split by merchant
 - [ ] Verify the 70 flagged category labels
 - [x] Skeleton: upload, review page, confirm, CSV export (Supabase storage)
+- [x] Light sidebar layout: dashboard, batch upload, review queue with Confirm & next
 - [ ] Login (Supabase Auth) with per-user access rules
+- [ ] Policy rules: duplicates, category limits, late submissions, restricted items
 - [ ] Deploy (Render + Vercel) and measure memory and speed there
 - [ ] Highlight where each value was read on the photo
 - [ ] Scheduled sweep: delete stored photos that no receipt references and are over a day old

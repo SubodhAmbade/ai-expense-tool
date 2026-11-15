@@ -18,6 +18,8 @@ export type Amount = string | number | null;
 
 export type Receipt = {
   id: string;
+  created_at: string;
+  confirmed_at: string | null; // set when a person confirms; null when the checks accepted it
   status: "needs_review" | "confirmed";
   merchant: string | null;
   receipt_date: string | null;
@@ -31,3 +33,10 @@ export type Receipt = {
 };
 
 export const label = (slug: string | null) => (slug ?? "").replace(/_/g, " ");
+
+// Newest first. Throws when the API is down so each page can say so in its own words.
+export async function fetchReceipts(status?: Receipt["status"]): Promise<Receipt[]> {
+  const res = await fetch(`${API_URL}/receipts${status ? `?status=${status}` : ""}`);
+  if (!res.ok) throw new Error(`API returned ${res.status}`);
+  return res.json();
+}

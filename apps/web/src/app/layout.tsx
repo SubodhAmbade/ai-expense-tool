@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import Link from "next/link";
+import { Suspense } from "react";
+import { fetchReceipts } from "@/lib/api";
+import Sidebar from "./sidebar";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -20,19 +22,29 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col font-sans">
-        <nav className="flex gap-6 border-b border-zinc-200 px-6 py-4 text-sm dark:border-zinc-800">
-          <span className="font-semibold">AI Expense Tool</span>
-          <Link href="/">Upload</Link>
-          <Link href="/receipts?status=needs_review">Review queue</Link>
-          <Link href="/receipts">All receipts</Link>
-        </nav>
-        <div className="mx-auto w-full max-w-5xl flex-1 px-6 py-8">{children}</div>
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+      <body className="font-sans">
+        <div className="flex min-h-screen flex-col md:flex-row">
+          <Sidebar
+            queueCount={
+              <Suspense fallback={null}>
+                <QueueCount />
+              </Suspense>
+            }
+          />
+          <main className="min-w-0 flex-1 px-5 py-8 md:px-10">{children}</main>
+        </div>
       </body>
     </html>
+  );
+}
+
+async function QueueCount() {
+  const queue = await fetchReceipts("needs_review").catch(() => []);
+  if (queue.length === 0) return null;
+  return (
+    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+      {queue.length}
+    </span>
   );
 }

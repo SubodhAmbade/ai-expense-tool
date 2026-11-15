@@ -1,11 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { API_URL, CATEGORIES, label, type Receipt } from "@/lib/api";
 
 const FIELDS = [
-  { name: "merchant", label: "Merchant", type: "text" },
+  { name: "merchant", label: "Merchant", type: "text", wide: true },
   { name: "receipt_date", label: "Date", type: "date" },
   { name: "currency", label: "Currency (e.g. MYR)", type: "text" },
   { name: "net_amount", label: "Subtotal", type: "text" },
@@ -19,10 +20,18 @@ type Editable = Pick<
   "id" | "merchant" | "receipt_date" | "currency" | "net_amount" | "tax_amount" | "total_amount" | "category"
 >;
 
-export default function ReviewForm({ receipt }: { receipt: Editable }) {
+const input = "min-h-11 rounded-lg border border-gray-300 bg-white px-3 text-base text-gray-900";
+
+export default function ReviewForm({ receipt, nextHref }: { receipt: Editable; nextHref: string }) {
   const router = useRouter();
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const hasNext = nextHref !== "/review";
+
+  // Load the next receipt in the background so "Confirm & next" opens it straight away.
+  useEffect(() => {
+    router.prefetch(nextHref);
+  }, [router, nextHref]);
 
   // onSubmit rather than a form action: a form action clears the reviewer's edits even when saving fails.
   async function save(event: FormEvent<HTMLFormElement>) {
@@ -55,44 +64,45 @@ export default function ReviewForm({ receipt }: { receipt: Editable }) {
       setSaving(false);
       return;
     }
-    router.push("/receipts?status=needs_review");
-    router.refresh();
+    router.push(nextHref);
+    router.refresh(); // the sidebar count and the queue position change
   }
 
   return (
-    <form onSubmit={save} className="flex flex-col gap-3 text-sm">
-      {FIELDS.map((f) => (
-        <label key={f.name} className="flex flex-col gap-1">
-          {f.label}
-          <input
-            name={f.name}
-            type={f.type}
-            defaultValue={receipt[f.name] ?? ""}
-            className="rounded border px-2 py-1 font-mono"
-          />
+    <form onSubmit={save} className="flex flex-1 flex-col gap-4 text-sm">
+      <div className="grid gap-4 sm:grid-cols-2">
+        {FIELDS.map((f) => (
+          <label key={f.name} className={`flex flex-col gap-1.5 font-medium text-gray-700 ${"wide" in f ? "sm:col-span-2" : ""}`}>
+            {f.label}
+            <input name={f.name} type={f.type} defaultValue={receipt[f.name] ?? ""} className={`${input} font-normal tabular-nums`} />
+          </label>
+        ))}
+        <label className="flex flex-col gap-1.5 font-medium text-gray-700 sm:col-span-2">
+          Category
+          <select name="category" defaultValue={receipt.category ?? "other"} className={`${input} font-normal capitalize`}>
+            {CATEGORIES.map((c) => (
+              <option key={c} value={c}>
+                {label(c)}
+              </option>
+            ))}
+          </select>
         </label>
-      ))}
-      <label className="flex flex-col gap-1">
-        Category
-        <select
-          name="category"
-          defaultValue={receipt.category ?? "other"}
-          className="rounded border px-2 py-1 capitalize"
+      </div>
+      {error && <p className="text-red-700">{error}</p>}
+      <div className="mt-auto flex flex-wrap items-center justify-end gap-3 border-t border-gray-100 pt-4">
+        <span className="mr-auto text-xs text-gray-500">Enter saves</span>
+        {hasNext && (
+          <Link href={nextHref} className="flex min-h-11 items-center rounded-lg border border-gray-300 px-4 font-medium hover:bg-gray-50">
+            Skip
+          </Link>
+        )}
+        <button
+          disabled={saving}
+          className="min-h-11 rounded-lg bg-blue-700 px-5 font-semibold text-white hover:bg-blue-800 disabled:opacity-50"
         >
-          {CATEGORIES.map((c) => (
-            <option key={c} value={c}>
-              {label(c)}
-            </option>
-          ))}
-        </select>
-      </label>
-      <button
-        disabled={saving}
-        className="mt-2 rounded bg-black px-4 py-2 text-white disabled:opacity-50 dark:bg-white dark:text-black"
-      >
-        {saving ? "Saving…" : "Confirm"}
-      </button>
-      {error && <p className="text-red-600">{error}</p>}
+          {saving ? "Saving…" : hasNext ? "Confirm & next" : "Confirm"}
+        </button>
+      </div>
     </form>
   );
 }
