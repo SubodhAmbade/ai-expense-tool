@@ -1,5 +1,6 @@
 """Storage: the receipts table and the private photo bucket in Supabase. Server-side only."""
 
+from contextlib import suppress
 from functools import lru_cache
 from uuid import uuid4
 
@@ -13,6 +14,7 @@ LIST_COLUMNS = (
     "net_amount, tax_amount, total_amount, category, validation_errors"
 )
 EXTENSIONS = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
+PAGE = 1000  # Supabase returns at most this many rows per request
 
 
 @lru_cache
@@ -27,11 +29,25 @@ class Store:
     def save(self, image: bytes, content_type: str, row: dict) -> dict:
         path = f"{uuid4()}{EXTENSIONS[content_type]}"
         _client().storage.from_(BUCKET).upload(path, image, {"content-type": content_type})
-        return _client().table("receipts").insert({**row, "image_path": path}).execute().data[0]
+        try:
+            return _client().table("receipts").insert({**row, "image_path": path}).execute().data[0]
+        except Exception:
+            with suppress(
+                Exception
+            ):  # don't leave an orphaned photo; the insert error matters more
+                _client().storage.from_(BUCKET).remove([path])
+            raise
 
     def list(self, status: str | None) -> list[dict]:
-        query = _client().table("receipts").select(LIST_COLUMNS).order("created_at", desc=True)
-        return (query.eq("status", status) if status else query).execute().data
+        rows: list[dict] = []
+        while True:  # page through, so the list and the CSV export never stop at PAGE rows
+            query = _client().table("receipts").select(LIST_COLUMNS)
+            query = query.order("created_at", desc=True).order("id")  # id breaks ties between pages
+            query = query.eq("status", status) if status else query
+            batch = query.range(len(rows), len(rows) + PAGE - 1).execute().data
+            rows += batch
+            if len(batch) < PAGE:
+                return rows
 
     def get(self, receipt_id: str) -> dict | None:
         rows = _client().table("receipts").select("*").eq("id", receipt_id).execute().data

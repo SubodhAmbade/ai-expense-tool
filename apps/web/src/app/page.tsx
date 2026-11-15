@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { type FormEvent, useState } from "react";
 import { API_URL } from "@/lib/api";
 
 export default function UploadPage() {
@@ -9,14 +9,20 @@ export default function UploadPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  async function upload(form: FormData) {
+  // onSubmit rather than a form action: a form action clears the inputs even when the upload fails.
+  async function upload(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
     setBusy(true);
     setError("");
     try {
       const profile = encodeURIComponent(String(form.get("profile")));
       const res = await fetch(`${API_URL}/receipts?profile=${profile}`, { method: "POST", body: form });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.detail ?? `Upload failed (${res.status})`);
+      if (!res.ok) {
+        // FastAPI sends a list for field errors; only show detail when it's a sentence.
+        throw new Error(typeof body.detail === "string" ? body.detail : `Upload failed (${res.status})`);
+      }
       router.push(`/receipts/${body.id}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Upload failed. Is the API running?");
@@ -32,7 +38,7 @@ export default function UploadPage() {
           JPEG, PNG or WebP, up to 10 MB. Reading takes a few seconds.
         </p>
       </div>
-      <form action={upload} className="flex flex-col gap-4">
+      <form onSubmit={upload} className="flex flex-col gap-4">
         <input
           name="file"
           type="file"

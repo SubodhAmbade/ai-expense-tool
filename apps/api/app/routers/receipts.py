@@ -2,22 +2,24 @@ import csv
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from functools import lru_cache
-from io import StringIO
+from io import BytesIO, StringIO
 from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile
-from pydantic import BaseModel, Field
+from PIL import Image, UnidentifiedImageError
+from pydantic import BaseModel, Field, field_validator
 
 from app.categorise import CATEGORIES
 from app.config import get_settings
 from app.pipeline import process
-from app.store import EXTENSIONS, Store, get_store
+from app.store import Store, get_store
 from app.tax_profiles import load_tax_profiles
 
 router = APIRouter(prefix="/receipts", tags=["receipts"])
 StoreDep = Annotated[Store, Depends(get_store)]
 MAX_BYTES = 10 * 1024 * 1024  # 10 MB, plenty for a phone photo
+FORMATS = {"JPEG": "image/jpeg", "PNG": "image/png", "WEBP": "image/webp"}  # what Pillow detects
 CSV_COLUMNS = ["id", "receipt_date", "merchant", "category", "currency"]
 CSV_COLUMNS += ["net_amount", "tax_amount", "total_amount"]
 
@@ -38,18 +40,36 @@ class ReceiptUpdate(BaseModel):
     total_amount: Decimal | None = None
     category: Literal[tuple(CATEGORIES)] | None = None  # type: ignore[valid-type]
 
+    @field_validator("category")
+    @classmethod
+    def category_not_cleared(cls, v: str | None) -> str:
+        if v is None:
+            raise ValueError("a confirmed receipt needs a category; use 'other' if none fits")
+        return v
+
 
 @router.post("", status_code=201)
 def upload(file: UploadFile, store: StoreDep, profile: str | None = None) -> dict:
-    if file.content_type not in EXTENSIONS:
-        raise HTTPException(415, f"Upload a JPEG, PNG or WebP image, not {file.content_type}")
     image = file.file.read(MAX_BYTES + 1)
     if len(image) > MAX_BYTES:
         raise HTTPException(413, "Image is larger than 10 MB")
+    # Trust the bytes, not the browser's label: check what the file really is.
+    try:
+        with Image.open(BytesIO(image)) as img:
+            detected = img.format
+            img.verify()
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError):
+        raise HTTPException(422, "That file isn't a readable image") from None
+    if detected not in FORMATS:
+        raise HTTPException(415, f"Upload a JPEG, PNG or WebP image, not {detected}")
     code = profile or get_settings().default_profile
     if code not in _profiles():
         raise HTTPException(422, f"Unknown profile '{code}'; known: {', '.join(_profiles())}")
-    return store.save(image, file.content_type, process(image, _profiles()[code]))
+    try:
+        row = process(image, _profiles()[code])
+    except (UnidentifiedImageError, OSError):  # damaged data that only fails on a full decode
+        raise HTTPException(422, "That file isn't a readable image") from None
+    return store.save(image, FORMATS[detected], row)
 
 
 @router.get("")
@@ -66,7 +86,14 @@ def export_csv(store: StoreDep) -> Response:
     writer.writeheader()
     for row in store.list("confirmed"):
         merchant = row.get("merchant") or ""
-        if merchant[:1] in ("=", "+", "-", "@"):  # spreadsheets would run it as a formula
+        if merchant[:1] in (
+            "=",
+            "+",
+            "-",
+            "@",
+            "\t",
+            "\r",
+        ):  # spreadsheets could run it as a formula
             merchant = f"'{merchant}"
         writer.writerow({**row, "merchant": merchant})
     headers = {"Content-Disposition": 'attachment; filename="receipts.csv"'}

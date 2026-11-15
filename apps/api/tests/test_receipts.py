@@ -86,22 +86,33 @@ def test_unclear_receipt_goes_to_review(client: TestClient) -> None:
 
 
 def test_rejects_bad_uploads_and_unknown_ids(client: TestClient) -> None:
-    text = client.post("/receipts", files={"file": ("a.txt", b"hello", "text/plain")})
-    huge = client.post(
-        "/receipts", files={"file": ("b.png", b"0" * (10 * 1024 * 1024 + 1), "image/png")}
-    )
-    profile = client.post(
-        "/receipts?profile=xx", files={"file": ("c.png", receipt_png("A"), "image/png")}
-    )
-    assert (text.status_code, huge.status_code, profile.status_code) == (415, 413, 422)
+    def post(name: str, data: bytes, content_type: str = "image/png", query: str = ""):
+        return client.post(f"/receipts{query}", files={"file": (name, data, content_type)})
+
+    gif = BytesIO()
+    Image.new("RGB", (10, 10)).save(gif, format="GIF")
+    png = receipt_png("A")
+    assert post("a.txt", b"hello", "text/plain").status_code == 422  # not an image at all
+    assert post("b.png", b"hello").status_code == 422  # labelled PNG, isn't one
+    assert post("c.png", png[: len(png) // 2]).status_code == 422  # cut off halfway
+    assert post("d.gif", gif.getvalue(), "image/gif").status_code == 415  # real image, wrong format
+    assert post("e.png", b"0" * (10 * 1024 * 1024 + 1)).status_code == 413
+    assert post("f.png", png, query="?profile=xx").status_code == 422
     assert client.get(f"/receipts/{uuid4()}").status_code == 404
     assert client.patch(f"/receipts/{uuid4()}", json={}).status_code == 404
+
+
+def test_category_cannot_be_cleared(client: TestClient) -> None:
+    png = receipt_png("ABC HO TRADING", "TOTAL 5.00")
+    row = client.post("/receipts", files={"file": ("r.png", png, "image/png")}).json()
+    assert client.patch(f"/receipts/{row['id']}", json={"category": None}).status_code == 422
 
 
 def test_export_neutralises_spreadsheet_formulas(client: TestClient) -> None:
     store = app.dependency_overrides[get_store]()
     store.rows["1"] = {"id": "1", "status": "confirmed", "merchant": "=HYPERLINK(evil)"}
     store.rows["2"] = {"id": "2", "status": "confirmed", "merchant": "", "total_amount": "-5.00"}
+    store.rows["3"] = {"id": "3", "status": "confirmed", "merchant": "\tcmd"}
     text = client.get("/receipts/export.csv").text
-    assert "'=HYPERLINK(evil)" in text
+    assert "'=HYPERLINK(evil)" in text and "'\tcmd" in text
     assert "-5.00" in text and "'-5.00" not in text  # refunds stay numbers

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { type FormEvent, useState } from "react";
 import { API_URL, CATEGORIES, label, type Receipt } from "@/lib/api";
 
 const FIELDS = [
@@ -23,17 +23,28 @@ export default function ReviewForm({ receipt }: { receipt: Editable }) {
   const router = useRouter();
   const [error, setError] = useState("");
 
-  async function save(form: FormData) {
+  // onSubmit rather than a form action: a form action clears the reviewer's edits even when saving fails.
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     setError("");
     // Empty fields are sent as null; amounts stay strings so the API keeps them exact.
     const body = Object.fromEntries(
-      [...form.entries()].map(([k, v]) => [k, String(v).trim() === "" ? null : String(v).trim()]),
+      [...new FormData(event.currentTarget).entries()].map(([k, v]) => [
+        k,
+        String(v).trim() === "" ? null : String(v).trim(),
+      ]),
     );
-    const res = await fetch(`${API_URL}/receipts/${receipt.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${API_URL}/receipts/${receipt.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    } catch {
+      setError("Couldn't reach the API. Check it's running, then try again.");
+      return;
+    }
     if (!res.ok) {
       const detail = (await res.json().catch(() => ({}))).detail;
       setError(typeof detail === "string" ? detail : "Some fields are invalid; check the values.");
@@ -44,7 +55,7 @@ export default function ReviewForm({ receipt }: { receipt: Editable }) {
   }
 
   return (
-    <form action={save} className="flex flex-col gap-3 text-sm">
+    <form onSubmit={save} className="flex flex-col gap-3 text-sm">
       {FIELDS.map((f) => (
         <label key={f.name} className="flex flex-col gap-1">
           {f.label}
