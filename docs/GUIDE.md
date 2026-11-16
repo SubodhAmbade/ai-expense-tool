@@ -49,8 +49,12 @@ One-time Supabase setup (free tier):
    order. `0003` creates the private `receipts` photo bucket.
 3. **Accounts:** under **Authentication → Users → Add user**, create your own account (tick **Auto
    Confirm User**). Under **Authentication → Sign In / Providers**, turn off **Allow new users to sign
-   up**, so only accounts you create can sign in. Then run `0004`, which gives receipts an owner and
-   hands any existing ones to your account. Create other accounts (such as a demo one) after that.
+   up**, so only accounts you create can sign in. Then run `0004`, which gives every receipt an owner:
+   receipts saved before login go to the **oldest account in the project**, not necessarily yours.
+   Check first, in the SQL Editor, that this returns your email:
+   `select email from auth.users order by created_at limit 1;`
+   If it doesn't, edit the `update` line in `0004` to pick your account by email before running it.
+   Create other accounts (such as a demo one) only after that.
 4. Under **Project Settings → API keys**, copy the project URL and the secret (service role) key into
    `apps/api/.env` as `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. That key bypasses all access
    rules: keep it in `.env` (git-ignored), never in the web app.
