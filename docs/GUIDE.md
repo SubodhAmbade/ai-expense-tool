@@ -49,7 +49,7 @@ One-time Supabase setup (free tier):
    order. `0003` creates the private `receipts` photo bucket.
 3. **Accounts:** under **Authentication → Users → Add user**, create your own account (tick **Auto
    Confirm User**). Under **Authentication → Sign In / Providers**, turn off **Allow new users to sign
-   up**, so only accounts you create can sign in. Then run `0004`, which gives every receipt an owner:
+   up**. This stops new sign-ups only. Accounts that already exist can still sign in, so list them under **Authentication → Users** and remove any you do not want to keep. Then run `0004`, which gives every receipt an owner:
    receipts saved before login go to the **oldest account in the project**, not necessarily yours.
    Check first, in the SQL Editor, that this returns your email:
    `select email from auth.users order by created_at limit 1;`
