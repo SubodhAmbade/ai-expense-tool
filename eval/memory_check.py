@@ -87,6 +87,9 @@ vectors = embed(texts)
 stage(f"BERT: {len(texts)} receipts embedded", t)
 print(f"{'':<44} {(time.perf_counter() - t) / len(texts):.2f} s per receipt")
 
-t = time.perf_counter()
-by_examples(vectors[0], vectors[1:], ["meals"] * (len(texts) - 1))
-stage("nearest-example vote", t)
+if len(vectors) < 2:  # one receipt has nothing to vote against
+    print("nearest-example vote: skipped, needs at least 2 receipts")
+else:
+    t = time.perf_counter()
+    by_examples(vectors[0], vectors[1:], ["meals"] * (len(vectors) - 1))
+    stage("nearest-example vote", t)
