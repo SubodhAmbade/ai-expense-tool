@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type DragEvent, useRef, useState } from "react";
-import { API_URL } from "@/lib/api";
+import { apiFetch } from "@/lib/browser-api";
 
 type Item = {
   key: string;
@@ -41,7 +41,7 @@ export default function UploadZone() {
       try {
         const form = new FormData();
         form.append("file", file);
-        const res = await fetch(`${API_URL}/receipts?profile=${encodeURIComponent(profile)}`, {
+        const res = await apiFetch(`/receipts?profile=${encodeURIComponent(profile)}`, {
           method: "POST",
           body: form,
         });

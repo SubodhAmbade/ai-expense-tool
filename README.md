@@ -40,10 +40,9 @@ powershell -ExecutionPolicy Bypass -File .\setup.ps1
 code .
 ```
 
-Run the three SQL files in `supabase/migrations/` in your Supabase project, put its URL and secret key
-in `apps/api/.env`, then press **F5** and pick **Full stack**: the API runs on http://localhost:8000
-(docs at `/docs`) and the web app on http://localhost:3000. Step-by-step instructions are in the
-[guide](docs/GUIDE.md#run-the-app-locally).
+Set up Supabase as the [guide](docs/GUIDE.md#run-the-app-locally) describes (migrations, your
+account, the API and web keys), then press **F5** and pick **Full stack**: the API runs on http://localhost:8000
+(docs at `/docs`) and the web app on http://localhost:3000, where you sign in.
 
 ## Results so far
 
@@ -111,6 +110,7 @@ for categories, `python ../../eval/categorise_eval.py`.
 - [x] Categoriser comparison: rules vs local BERT (zero-shot and with examples)
 - [x] Skeleton app: upload, review, confirm, CSV export; Supabase for data and photos
 - [x] Error analysis of missed totals; rounding, typo and tax-summary rules
-- [ ] Login, then deploy
+- [x] Login: owner-created accounts, each user sees only their own receipts, 15-minute idle sign-out
+- [ ] Deploy (Render + Vercel)
 - [ ] Week 2: baseline categoriser, labelled test set, model comparison
 - [ ] Week 3: UI, eval results, demo video

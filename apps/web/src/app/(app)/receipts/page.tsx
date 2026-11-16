@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { fetchReceipts, type Receipt } from "@/lib/api";
+import { fetchReceipts } from "@/lib/server-api";
 import ReceiptTable from "../receipt-table";
 
 const FILTERS = [
@@ -23,10 +23,8 @@ export default function ReceiptsPage(props: PageProps<"/receipts">) {
 async function ReceiptList({ searchParams }: { searchParams: PageProps<"/receipts">["searchParams"] }) {
   const { status } = await searchParams;
   const filter = FILTERS.find((f) => f.status === status) ?? FILTERS[0];
-  let receipts: Receipt[];
-  try {
-    receipts = await fetchReceipts(filter.status);
-  } catch {
+  const receipts = await fetchReceipts(filter.status);
+  if (!receipts) {
     return <p className="text-sm text-red-700">Couldn&apos;t load receipts. Is the API running?</p>;
   }
 

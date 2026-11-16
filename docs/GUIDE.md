@@ -45,11 +45,19 @@ One-time Supabase setup (free tier):
 
 1. Create a project at [supabase.com](https://supabase.com). Pick the region closest to you and save
    the database password somewhere safe.
-2. In the dashboard's **SQL Editor**, run the files in `supabase/migrations/` in order: `0001`, `0002`,
-   `0003`. The last one creates the private `receipts` photo bucket.
-3. Under **Project Settings → API keys**, copy the project URL and the secret (service role) key into
+2. In the dashboard's **SQL Editor**, run `0001`, `0002` and `0003` from `supabase/migrations/`, in
+   order. `0003` creates the private `receipts` photo bucket.
+3. **Accounts:** under **Authentication → Users → Add user**, create your own account (tick **Auto
+   Confirm User**). Under **Authentication → Sign In / Providers**, turn off **Allow new users to sign
+   up**, so only accounts you create can sign in. Then run `0004`, which gives receipts an owner and
+   hands any existing ones to your account. Create other accounts (such as a demo one) after that.
+4. Under **Project Settings → API keys**, copy the project URL and the secret (service role) key into
    `apps/api/.env` as `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. That key bypasses all access
    rules: keep it in `.env` (git-ignored), never in the web app.
+5. Copy `apps/web/.env.example` to `apps/web/.env.local` and fill in the project URL and the
+   **publishable** key (`sb_publishable_…`). That key is public by design: it only lets people sign in.
+6. Under **Project Settings → JWT Keys**, the current key should be an asymmetric one (ECC or RSA).
+   The API checks sign-ins against its public keys, so it needs no extra secret.
 
 Then start both halves, each in its own terminal (or press F5 and pick **Full stack**):
 
@@ -62,7 +70,7 @@ Then start both halves, each in its own terminal (or press F5 and pick **Full st
 npm run dev
 ```
 
-Open http://localhost:3000 and drop receipts on the dashboard. Each one is read in turn; ones that fail a
+Open http://localhost:3000, sign in, and drop receipts on the dashboard. Each one is read in turn; ones that fail a
 check land in the **Review queue**, where **Confirm & next** walks through them. API docs are at
 http://localhost:8000/docs.
 
@@ -154,7 +162,9 @@ flowchart LR
 | `app/tax_profiles.py` | YAML → `TaxProfile` | Loads and validates region profiles |
 | `app/pipeline.py` | photo bytes + profile → row | Runs OCR → extract → validate → categorise; adds a review reason for a low-confidence category |
 | `app/store.py` | rows and photos ↔ Supabase | The only module that talks to Supabase; tests swap it for an in-memory store |
+| `app/auth.py` | sign-in token → user id | Checks the Supabase token's signature, expiry, project and audience; 401 otherwise |
 | `app/routers/receipts.py` | HTTP ↔ pipeline and store | The five endpoints below |
+| `apps/web/src/proxy.ts` | every page request | Refreshes the sign-in cookie; sends signed-out visitors to `/login` |
 | `apps/web/src/app/` | browser | Sidebar shell; dashboard with drop zone and month summary; review queue; all receipts; review page with Confirm & next; export; policy (planned rules) |
 | `eval/extract_eval.py` | folder of `.ocr.json` + SROIE keys → report | Scores extraction and validation |
 | `eval/label_mining.py` | folder of `.ocr.json` + SROIE keys → report | Which lines hold the true total, why each miss happened, how many receipts add a service charge |
@@ -174,6 +184,10 @@ OCR engine means rewriting `ocr.py` only.
 Money is `Decimal` everywhere and `numeric` in the database. There is no float arithmetic on amounts.
 
 ### API endpoints
+
+Every `/receipts` endpoint needs `Authorization: Bearer <token>` from a Supabase sign-in, and only
+ever sees the signed-in user's receipts. Someone else's receipt answers 404, like one that doesn't
+exist. `GET /health` stays open.
 
 | Method and path | Does |
 |---|---|
@@ -246,8 +260,13 @@ docs/            this guide
 | Database and photos | One free Supabase cloud project for local dev and the demo | No Docker on Windows; the same setup serves the deployed app |
 | Data access | The browser never talks to Supabase; only the API does, with the secret key | Keys stay on the server, and every write goes through the same validation |
 | Photos | Private bucket; the API hands out links that expire after 10 minutes | Receipts carry names, card digits and addresses |
-| Access rules | Row level security on, with no policies | Even a leaked public key reads nothing; per-user rules come with login |
-| Login | Built locally without it; added before any public deploy | Faster first slice, but no public version without it |
+| Access rules | Row level security on, with no policies | The browser never queries the database, so it needs no policies; even a leaked public key reads nothing |
+| Login | Supabase Auth, email and password; no sign-up page and sign-ups off in Supabase | Accounts are created by the owner, so strangers can't fill the storage |
+| Ownership | Every receipt has a `user_id`; the API filters every query by it | One place enforces it, and it's tested: another user's receipt is a 404 |
+| Token check | The API verifies Supabase's signed tokens against the project's public keys (JWKS), cached | No shared secret to leak, no call to Supabase per request |
+| Idle sign-out | After 15 minutes without clicks, typing or scrolling, in any tab | Expense data is sensitive; Supabase's inactivity timeout is a paid feature, so the app does it |
+| Session | Kept in cookies by `@supabase/ssr`; `proxy.ts` refreshes it before each page | Server-rendered pages and the browser see the same sign-in |
+| CSV download | Fetched with the token, then saved from memory | A plain link can't send the token |
 | Failed saves | The uploaded photo is kept, never deleted on error | An interrupted save can still complete afterwards, so deleting could leave a receipt without its photo; a stray photo is harmless |
 | Processing | Inside the upload request, no job queue | Simplest; add a queue only if Render proves too slow |
 | Auto-accepted receipts | Stored as `confirmed` straight away | The checks are the confirmation; reviewers can still correct them |
@@ -314,6 +333,9 @@ money; region-specific values in YAML; every bug fix comes with a test.
 | "Nothing to compare" when opening a PR | The commit went straight to `main` | Branch before committing |
 | API error "Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY" | `apps/api/.env` is missing the Supabase values | Copy them from the Supabase dashboard (see Run the app locally) and restart the API |
 | Web page says it couldn't load receipts | The API isn't running, or runs on another port | Start uvicorn in `apps\api`; the web app expects http://localhost:8000 |
+| Every page sends you to the login page | Missing `apps/web/.env.local`, or the API's `SUPABASE_URL` points at another project | Fill in both from the same Supabase project and restart both halves |
+| "Wrong email or password" for an account you just made | The user wasn't confirmed | In Supabase, **Authentication → Users**, create it again with **Auto Confirm User** ticked |
+| Migration `0004` fails with "contains null values" | No account existed when it ran | Create your account first, then run `0004` again |
 | VS Code or the laptop froze during the category eval | The embedding model was given too many receipts at once and ran out of memory | Fixed: receipts are embedded one at a time. If it recurs, end `python.exe` in Task Manager |
 
 ## 8. Roadmap
@@ -325,7 +347,7 @@ money; region-specific values in YAML; every bug fix comes with a test.
 - [ ] Verify the 70 flagged category labels
 - [x] Skeleton: upload, review page, confirm, CSV export (Supabase storage)
 - [x] Light sidebar layout: dashboard, batch upload, review queue with Confirm & next
-- [ ] Login (Supabase Auth) with per-user access rules
+- [x] Login (Supabase Auth): owner-created accounts, per-user receipts, 15-minute idle sign-out
 - [ ] Policy rules: duplicates, category limits, late submissions, restricted items
 - [ ] Deploy (Render + Vercel) and measure memory and speed there
 - [ ] Highlight where each value was read on the photo

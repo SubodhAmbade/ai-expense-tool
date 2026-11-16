@@ -1,4 +1,8 @@
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+// Public by design: the publishable key only lets people sign in; the database stays closed to it.
+export const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+export const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? "";
+export const IDLE_KEY = "lastActive"; // localStorage: when this browser was last used, shared by tabs
 
 // Keep in sync with CATEGORIES in apps/api/app/categorise.py (the API rejects anything else).
 export const CATEGORIES = [
@@ -33,10 +37,3 @@ export type Receipt = {
 };
 
 export const label = (slug: string | null) => (slug ?? "").replace(/_/g, " ");
-
-// Newest first. Throws when the API is down so each page can say so in its own words.
-export async function fetchReceipts(status?: Receipt["status"]): Promise<Receipt[]> {
-  const res = await fetch(`${API_URL}/receipts${status ? `?status=${status}` : ""}`);
-  if (!res.ok) throw new Error(`API returned ${res.status}`);
-  return res.json();
-}

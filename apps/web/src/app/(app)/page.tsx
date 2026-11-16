@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { API_URL, fetchReceipts, label, type Receipt } from "@/lib/api";
+import { label, type Receipt } from "@/lib/api";
+import { fetchReceipts } from "@/lib/server-api";
+import ExportButton from "./export-button";
 import ReceiptTable from "./receipt-table";
 import UploadZone from "./upload-zone";
 
@@ -9,12 +11,7 @@ export default function Dashboard() {
     <div className="mx-auto flex max-w-6xl flex-col gap-6">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-        <a
-          href={`${API_URL}/receipts/export.csv`}
-          className="flex min-h-11 items-center rounded-lg border border-gray-300 bg-white px-4 text-sm font-medium hover:bg-gray-50"
-        >
-          Export CSV
-        </a>
+        <ExportButton className="flex min-h-11 items-center rounded-lg border border-gray-300 bg-white px-4 text-sm font-medium hover:bg-gray-50" />
       </header>
       <UploadZone />
       <Suspense fallback={<div className="h-96 animate-pulse rounded-xl bg-gray-100" />}>
@@ -28,10 +25,8 @@ const cents = (amount: Receipt["total_amount"]) => Math.round(Number(amount) * 1
 const money = (c: number) => (c / 100).toLocaleString("en", { minimumFractionDigits: 2 });
 
 async function Overview() {
-  let receipts: Receipt[];
-  try {
-    receipts = await fetchReceipts();
-  } catch {
+  const receipts = await fetchReceipts();
+  if (!receipts) {
     return <p className="text-sm text-red-700">Couldn&apos;t load receipts. Is the API running?</p>;
   }
 

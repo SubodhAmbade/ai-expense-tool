@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { API_URL, fetchReceipts, type Receipt } from "@/lib/api";
+import type { Receipt } from "@/lib/api";
+import { apiGet, fetchReceipts } from "@/lib/server-api";
 import ReviewForm from "./review-form";
 
 export default function ReceiptPage(props: PageProps<"/receipts/[id]">) {
@@ -14,16 +15,15 @@ export default function ReceiptPage(props: PageProps<"/receipts/[id]">) {
 
 async function ReceiptDetail({ params }: { params: PageProps<"/receipts/[id]">["params"] }) {
   const { id } = await params;
-  const [res, queue] = await Promise.all([
-    fetch(`${API_URL}/receipts/${encodeURIComponent(id)}`),
-    fetchReceipts("needs_review")
-      .then((q) => q.reverse()) // oldest first, same as the queue page
-      .catch((): Receipt[] => []),
+  const [res, waiting] = await Promise.all([
+    apiGet(`/receipts/${encodeURIComponent(id)}`),
+    fetchReceipts("needs_review"),
   ]);
-  if (res.status === 404 || res.status === 422) notFound();
-  if (!res.ok) {
-    return <p className="text-sm text-red-700">Couldn&apos;t load this receipt ({res.status}).</p>;
+  if (res?.status === 404 || res?.status === 422) notFound(); // someone else's receipt is a 404 too
+  if (!res?.ok) {
+    return <p className="text-sm text-red-700">Couldn&apos;t load this receipt. Is the API running?</p>;
   }
+  const queue = (waiting ?? []).reverse(); // oldest first, same as the queue page
   const receipt: Receipt = await res.json();
 
   // Where this receipt sits in the queue. Confirming moves on to the next one still waiting,

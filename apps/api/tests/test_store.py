@@ -64,7 +64,7 @@ class FakeClient:
 def test_list_pages_past_the_supabase_row_limit_newest_first(monkeypatch) -> None:
     fake = FakeClient(rows=PAGE * 2 + 5)
     monkeypatch.setattr(store_module, "_client", lambda: fake)
-    rows = Store().list("confirmed")
+    rows = Store().list("user-a", "confirmed")
     assert len(rows) == PAGE * 2 + 5 and rows[0]["id"] == str(PAGE * 2 + 4)  # newest first
     assert fake.ranges == [(0, PAGE - 1), (PAGE, 2 * PAGE - 1), (2 * PAGE, 3 * PAGE - 1)]
 
@@ -74,5 +74,5 @@ def test_failed_insert_keeps_the_photo_and_reports_the_error(monkeypatch) -> Non
         fake = FakeClient(insert_error=error)
         monkeypatch.setattr(store_module, "_client", lambda fake=fake: fake)
         with pytest.raises(RuntimeError):
-            Store().save(b"img", "image/png", {"status": "confirmed"})
+            Store().save("user-a", b"img", "image/png", {"status": "confirmed"})
         assert len(fake.photos) == 1, error

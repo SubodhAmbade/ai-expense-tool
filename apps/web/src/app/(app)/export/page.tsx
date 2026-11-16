@@ -1,5 +1,6 @@
 import { Suspense } from "react";
-import { API_URL, fetchReceipts, type Receipt } from "@/lib/api";
+import { fetchReceipts } from "@/lib/server-api";
+import ExportButton from "../export-button";
 
 export default function ExportPage() {
   return (
@@ -18,10 +19,8 @@ export default function ExportPage() {
 }
 
 async function Summary() {
-  let confirmed: Receipt[];
-  try {
-    confirmed = await fetchReceipts("confirmed");
-  } catch {
+  const confirmed = await fetchReceipts("confirmed");
+  if (!confirmed) {
     return <p className="text-sm text-red-700">Couldn&apos;t load receipts. Is the API running?</p>;
   }
   const currencies = [...new Set(confirmed.map((r) => r.currency ?? "no currency"))].join(", ");
@@ -33,12 +32,10 @@ async function Summary() {
       <p className="text-sm text-gray-600">
         Columns: id, date, merchant, category, currency, net, tax, total. Amounts are exact, never rounded or converted.
       </p>
-      <a
-        href={`${API_URL}/receipts/export.csv`}
-        className="flex min-h-11 items-center self-start rounded-lg bg-blue-700 px-5 text-sm font-semibold text-white hover:bg-blue-800"
-      >
-        Download CSV
-      </a>
+      <ExportButton
+        label="Download CSV"
+        className="flex min-h-11 items-center rounded-lg bg-blue-700 px-5 text-sm font-semibold text-white hover:bg-blue-800"
+      />
     </section>
   );
 }
