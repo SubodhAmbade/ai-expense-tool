@@ -5,9 +5,15 @@ import { API_URL, SUPABASE_KEY, SUPABASE_URL } from "./api";
 export const supabaseBrowser = () => createBrowserClient(SUPABASE_URL, SUPABASE_KEY);
 
 // Call the API from the browser as the signed-in user. Network errors still throw, as fetch does.
-export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+// expectUser: refuse to send if another account signed in since (e.g. in another tab), checked on
+// the same session read that supplies the token.
+export async function apiFetch(path: string, init: RequestInit = {}, expectUser?: string): Promise<Response> {
   const auth = supabaseBrowser().auth;
-  const token = (await auth.getSession()).data.session?.access_token ?? "";
+  const session = (await auth.getSession()).data.session;
+  if (expectUser && session?.user.id !== expectUser) {
+    throw new Error("You're signed in as someone else now, so this was skipped.");
+  }
+  const token = session?.access_token ?? "";
   const headers = new Headers(init.headers);
   headers.set("Authorization", `Bearer ${token}`);
   const res = await fetch(`${API_URL}${path}`, { ...init, headers });

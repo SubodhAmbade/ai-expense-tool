@@ -30,6 +30,7 @@ def token(key=KEY, **changes) -> HTTPAuthorizationCredentials:
         "iss": ISSUER,
         "exp": datetime.now(UTC) + timedelta(hours=1),
     } | changes
+    claims = {k: v for k, v in claims.items() if v is not None}  # None: leave the claim out
     return HTTPAuthorizationCredentials(
         scheme="Bearer", credentials=jwt.encode(claims, key, "ES256")
     )
@@ -47,6 +48,9 @@ def test_valid_token_gives_the_user_id() -> None:
         token(aud="anon"),  # not a signed-in user's token
         token(iss="https://other.supabase.co/auth/v1"),  # another project's token
         token(key=ec.generate_private_key(ec.SECP256R1())),  # signed by someone else
+        token(sub=None),  # no user
+        token(sub=""),  # empty user
+        token(sub=123),  # not a user id
     ],
 )
 def test_bad_tokens_are_rejected(credentials) -> None:

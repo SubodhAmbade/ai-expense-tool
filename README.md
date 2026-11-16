@@ -33,7 +33,7 @@ eval/         categoriser comparison
 
 ## Getting started (Windows)
 
-Requires Python 3.13, Node 20+, Git and a free [Supabase](https://supabase.com) project.
+Requires Python 3.13, Node 22+, Git and a free [Supabase](https://supabase.com) project.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\setup.ps1

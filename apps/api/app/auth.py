@@ -44,11 +44,19 @@ def current_user(
         raise unauthorised from None
     try:
         claims = jwt.decode(
-            token, key, algorithms=["ES256", "RS256"], audience="authenticated", issuer=_issuer()
+            token,
+            key,
+            algorithms=["ES256", "RS256"],
+            audience="authenticated",
+            issuer=_issuer(),
+            options={"require": ["exp", "sub"]},
         )
-    except jwt.PyJWTError:  # bad signature, expired, wrong project or audience
+    except jwt.PyJWTError:  # bad signature, expired, wrong project or audience, missing claim
         raise unauthorised from None
-    return claims["sub"]
+    user = claims["sub"]
+    if not isinstance(user, str) or not user:  # every query is filtered by it
+        raise unauthorised
+    return user
 
 
 UserDep = Annotated[str, Depends(current_user)]

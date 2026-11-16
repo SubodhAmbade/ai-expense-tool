@@ -20,7 +20,6 @@ export default function AppLayout({ children }: LayoutProps<"/">) {
         }
       />
       <main className="min-w-0 flex-1 px-5 py-8 md:px-10">{children}</main>
-      <IdleSignOut />
     </div>
   );
 }
@@ -41,6 +40,7 @@ async function Account() {
     <div className="flex items-center justify-between gap-2 border-t border-gray-200 px-5 py-3">
       <span className="truncate text-sm text-gray-600">{String(data?.claims.email ?? "")}</span>
       <SignOutButton />
+      <IdleSignOut userId={String(data?.claims.sub ?? "")} />
     </div>
   );
 }

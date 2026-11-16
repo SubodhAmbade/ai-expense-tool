@@ -10,4 +10,4 @@ numpy>=2.0
 pillow>=11.0
 fastembed>=0.7
 supabase>=2.10
-pyjwt[crypto]>=2.9
+pyjwt[crypto]>=2.14  # 2.13/2.14 fix several 2026 key-confusion advisories

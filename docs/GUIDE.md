@@ -29,7 +29,7 @@ export CSV. Results are in the [README](../README.md#results-so-far). Login and 
 
 ### Setup (Windows)
 
-Needs Python 3.13 (the OCR engine has no build for newer Pythons yet), Node 20+ and Git.
+Needs Python 3.13 (the OCR engine has no build for newer Pythons yet), Node 22+ (the Supabase libraries need it) and Git.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\setup.ps1
