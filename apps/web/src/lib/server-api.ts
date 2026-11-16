@@ -1,6 +1,5 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { API_URL, type Receipt, SUPABASE_KEY, SUPABASE_URL } from "./api";
 
@@ -14,8 +13,10 @@ export async function supabaseServer() {
   });
 }
 
-// GET from the API as the signed-in user. null = the API couldn't be reached. A rejected
-// sign-in goes back to the login page (outside any try, so the redirect isn't swallowed).
+// GET from the API as the signed-in user. null = the API couldn't be reached. A 401 is returned
+// like any error, not sent to /login: proxy.ts already sends signed-out visitors there, so a 401
+// here means the API and Supabase disagree (e.g. a different SUPABASE_URL), and redirecting
+// would bounce between / and /login forever.
 export async function apiGet(path: string): Promise<Response | null> {
   const { data } = await (await supabaseServer()).auth.getSession(); // the API verifies the token
   let res: Response;
@@ -26,12 +27,11 @@ export async function apiGet(path: string): Promise<Response | null> {
   } catch {
     return null;
   }
-  if (res.status === 401) redirect("/login");
   return res;
 }
 
 // Newest first; null when the API is down or errors, so each page can say so in its own words.
 export async function fetchReceipts(status?: Receipt["status"]): Promise<Receipt[] | null> {
   const res = await apiGet(`/receipts${status ? `?status=${status}` : ""}`);
-  return res?.ok ? res.json() : null;
+  return res?.ok ? res.json().catch(() => null) : null;
 }

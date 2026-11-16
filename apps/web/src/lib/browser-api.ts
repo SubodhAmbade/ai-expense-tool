@@ -10,8 +10,11 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
   const headers = new Headers(init.headers);
   headers.set("Authorization", `Bearer ${data.session?.access_token ?? ""}`);
   const res = await fetch(`${API_URL}${path}`, { ...init, headers });
-  // Signed out or expired: a full page load to /login, from code outside any component.
-  // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-  if (res.status === 401) window.location.assign("/login");
+  if (res.status === 401) {
+    // Rejected by the API: end the session here too, or /login would bounce straight back.
+    await supabaseBrowser().auth.signOut({ scope: "local" });
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+    window.location.assign("/login"); // a full page load, from code outside any component
+  }
   return res;
 }

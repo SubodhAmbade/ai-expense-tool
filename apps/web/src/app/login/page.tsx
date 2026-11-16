@@ -31,6 +31,8 @@ export default function LoginPage(props: PageProps<"/login">) {
 }
 
 async function Form({ searchParams }: { searchParams: PageProps<"/login">["searchParams"] }) {
-  const { reason } = await searchParams;
-  return <LoginForm idle={reason === "idle"} />;
+  const { reason, next } = await searchParams;
+  // Only a path on this site: "//evil.com" or "/\evil.com" would leave it.
+  const safe = typeof next === "string" && next.startsWith("/") && !/^\/[\\/]/.test(next);
+  return <LoginForm idle={reason === "idle"} next={safe ? next : "/"} />;
 }

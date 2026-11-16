@@ -158,10 +158,17 @@ def test_each_user_sees_only_their_own_receipts(client: TestClient) -> None:
     client.patch(f"/receipts/{mine['id']}", json={"category": "other"})
 
     SIGNED_IN["user"] = "user-b"
-    assert client.get("/receipts").json() == []
-    assert client.get(f"/receipts/{mine['id']}").status_code == 404  # not 403: don't reveal it
-    assert client.patch(f"/receipts/{mine['id']}", json={"category": "meals"}).status_code == 404
     assert client.get("/receipts/export.csv").text.count("\n") == 1  # header row only
+    theirs = client.post("/receipts", files={"file": ("r.png", png, "image/png")}).json()
+
+    for user, own, other in (("user-a", mine, theirs), ("user-b", theirs, mine)):
+        SIGNED_IN["user"] = user
+        assert [r["id"] for r in client.get("/receipts").json()] == [own["id"]]
+        assert client.get(f"/receipts/{own['id']}").status_code == 200
+        assert client.get(f"/receipts/{other['id']}").status_code == 404  # not 403: don't reveal it
+        assert (
+            client.patch(f"/receipts/{other['id']}", json={"category": "meals"}).status_code == 404
+        )
 
 
 def test_receipts_need_a_sign_in() -> None:

@@ -7,7 +7,7 @@ import { supabaseBrowser } from "@/lib/browser-api";
 
 const input = "min-h-11 rounded-lg border border-gray-300 px-3 text-base text-gray-900";
 
-export default function LoginForm({ idle }: { idle: boolean }) {
+export default function LoginForm({ idle, next }: { idle: boolean; next: string }) {
   const router = useRouter();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -31,7 +31,7 @@ export default function LoginForm({ idle }: { idle: boolean }) {
     try {
       localStorage.setItem(IDLE_KEY, String(Date.now())); // a fresh sign-in isn't idle
     } catch {}
-    router.replace("/");
+    router.replace(next); // the page they asked for before signing in
     router.refresh();
   }
 

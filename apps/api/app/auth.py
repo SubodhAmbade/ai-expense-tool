@@ -1,7 +1,9 @@
 """Who is asking: verifies the Supabase sign-in token sent with every receipts request.
 
 Tokens are signed by Supabase with a private key; we check them against the project's public
-keys (JWKS), fetched once and cached. No secret is needed, and nothing is called per request.
+keys (JWKS). The key set is cached for 5 minutes, so a key revoked in Supabase stops working soon
+after, and no secret is needed. Projects still on the legacy shared secret (HS256) aren't
+supported: switch to asymmetric JWT keys in Supabase.
 """
 
 from functools import lru_cache
@@ -23,7 +25,7 @@ def _issuer() -> str:
 
 @lru_cache
 def _jwks() -> jwt.PyJWKClient:
-    return jwt.PyJWKClient(f"{_issuer()}/.well-known/jwks.json", cache_keys=True)
+    return jwt.PyJWKClient(f"{_issuer()}/.well-known/jwks.json")  # key set cached 5 minutes
 
 
 def current_user(

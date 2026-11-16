@@ -24,13 +24,17 @@ export default function IdleSignOut() {
       }
     };
     const touch = () => {
+      const last = read();
+      if (last && Date.now() - last >= IDLE_MS) return check(); // waking a sleeping laptop isn't activity
       local = Date.now();
       try {
         localStorage.setItem(IDLE_KEY, String(local));
       } catch {}
     };
+    let ending = false;
     const check = async () => {
-      if (Date.now() - read() < IDLE_MS) return;
+      if (ending || Date.now() - read() < IDLE_MS) return;
+      ending = true;
       clearInterval(timer);
       await supabaseBrowser().auth.signOut({ scope: "local" }); // ends this browser's session
       router.replace("/login?reason=idle");

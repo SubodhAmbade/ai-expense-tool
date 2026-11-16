@@ -5,10 +5,12 @@ from app.store import PAGE, Store
 
 
 class FakeQuery:
-    """Just enough of the Supabase query builder to test paging and saving."""
+    """Just enough of the Supabase query builder to test paging, saving and owner filters."""
 
     def __init__(self, db: "FakeClient") -> None:
         self.db = db
+        self.rows = db.rows
+        self.changes: dict | None = None
 
     def select(self, *_):
         return self
@@ -16,12 +18,17 @@ class FakeQuery:
     def order(self, *_, **__):
         return self
 
-    def eq(self, *_):
+    def eq(self, field: str, value):
+        self.rows = [r for r in self.rows if r.get(field) == value]
+        return self
+
+    def update(self, changes: dict):
+        self.changes = changes
         return self
 
     def range(self, start: int, end: int):
         self.db.ranges.append((start, end))
-        self.rows = self.db.rows[start : end + 1]
+        self.rows = self.rows[start : end + 1]
         return self
 
     def insert(self, row: dict):
@@ -34,6 +41,8 @@ class FakeQuery:
         return self
 
     def execute(self):
+        for row in self.rows if self.changes else ():
+            row.update(self.changes)
         self.data = self.rows
         return self
 
@@ -48,7 +57,9 @@ class FakeBucket:
 
 class FakeClient:
     def __init__(self, rows: int = 0, insert_error: str | None = None) -> None:
-        self.rows = [{"id": str(i)} for i in range(rows)]
+        self.rows = [
+            {"id": str(i), "user_id": "user-a", "status": "confirmed"} for i in range(rows)
+        ]
         self.insert_error = insert_error
         self.ranges: list[tuple[int, int]] = []
         self.photos: set[str] = set()
@@ -76,3 +87,19 @@ def test_failed_insert_keeps_the_photo_and_reports_the_error(monkeypatch) -> Non
         with pytest.raises(RuntimeError):
             Store().save("user-a", b"img", "image/png", {"status": "confirmed"})
         assert len(fake.photos) == 1, error
+
+
+def test_every_query_is_limited_to_the_signed_in_user(monkeypatch) -> None:
+    fake = FakeClient()
+    fake.rows = [
+        {"id": "1", "user_id": "user-a", "status": "confirmed"},
+        {"id": "2", "user_id": "user-b", "status": "confirmed"},
+    ]
+    monkeypatch.setattr(store_module, "_client", lambda: fake)
+    store = Store()
+    assert [r["id"] for r in store.list("user-a", "confirmed")] == ["1"]
+    assert store.get("user-a", "1") is not None
+    assert store.get("user-a", "2") is None  # user-b's receipt
+    with pytest.raises(IndexError):  # nothing of user-a's matches, so nothing changes
+        store.update("user-a", "2", {"category": "meals"})
+    assert "category" not in fake.rows[1]

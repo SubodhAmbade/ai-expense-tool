@@ -23,7 +23,7 @@ async function ReceiptDetail({ params }: { params: PageProps<"/receipts/[id]">["
   if (!res?.ok) {
     return <p className="text-sm text-red-700">Couldn&apos;t load this receipt. Is the API running?</p>;
   }
-  const queue = (waiting ?? []).reverse(); // oldest first, same as the queue page
+  const queue = [...(waiting ?? [])].reverse(); // oldest first, same as the queue page
   const receipt: Receipt = await res.json();
 
   // Where this receipt sits in the queue. Confirming moves on to the next one still waiting,

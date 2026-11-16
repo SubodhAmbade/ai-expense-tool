@@ -21,7 +21,10 @@ export async function proxy(request: NextRequest) {
 
   const onLogin = request.nextUrl.pathname === "/login";
   if (Boolean(data?.claims) === onLogin) {
-    const redirect = NextResponse.redirect(new URL(onLogin ? "/" : "/login", request.url));
+    const target = new URL(onLogin ? "/" : "/login", request.url);
+    const { pathname, search } = request.nextUrl;
+    if (!onLogin && pathname !== "/") target.searchParams.set("next", pathname + search); // come back here
+    const redirect = NextResponse.redirect(target);
     response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie)); // keep a refresh
     return redirect;
   }

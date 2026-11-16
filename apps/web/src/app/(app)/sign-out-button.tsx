@@ -9,7 +9,9 @@ export default function SignOutButton() {
     <button
       type="button"
       onClick={async () => {
-        await supabaseBrowser().auth.signOut(); // also ends the session on Supabase's side
+        const auth = supabaseBrowser().auth;
+        const { error } = await auth.signOut(); // also ends the session on Supabase's side
+        if (error) await auth.signOut({ scope: "local" }); // offline: at least sign out here
         router.replace("/login");
         router.refresh();
       }}
