@@ -144,3 +144,27 @@ def test_total_that_includes_gst_is_still_a_total() -> None:
         ocr("SUBTOTAL 100.00", "GST 6.00", "GRAND TOTAL INCLUDED GST 106.00"), PROFILES["my"]
     )
     assert result.total.value == Decimal("106.00")
+
+
+def test_cafe_receipt_with_one_decimal_amounts() -> None:
+    result = extract(
+        ocr(
+            "T305",
+            "365 Cafe",
+            "Order Time: 2024-04-30 15:13:24",
+            "Milk Tea RM 680.0",
+            "75% Sugar",
+            "Subtotal RM 1,274.0",
+            "Total Discount -RM 208.0",
+            "Service Charge(10%) RM 127.4",
+            "Amount RM 1,193.4",
+            "PAID (CASH) RM 1,193.4",
+            "Expiry Date: 3 November 2024 11:59:59PM",  # the e-invoice QR code, not the purchase
+        ),
+        PROFILES["my"],
+    )
+    assert result.date.value == date(2024, 4, 30)
+    assert result.subtotal.value == Decimal("1274.00")
+    assert result.total.value == Decimal("1193.40")
+    assert result.total.confidence < 0.8  # a bare "Amount" label needs the cash line to agree
+    assert result.cash.value == Decimal("1193.40")
