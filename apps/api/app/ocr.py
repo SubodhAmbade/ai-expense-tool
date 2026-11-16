@@ -32,15 +32,45 @@ class OcrResult(BaseModel):
     text: str  # lines on the same row joined by spaces, rows by newlines
 
 
+# Tuned to fit a 512 MB server. On SROIE test receipts 350-449, with the reduced JPEG decode below:
+# peak memory 708 -> 361 MB, 3.7 -> 2.2 s per receipt, same accuracy (eval/memory_check.py).
+# Reading 2 text lines at a time instead of 6 is the big saving; receipts are photographed upright,
+# so the rotation model is skipped.
+ENGINE_SETTINGS = {
+    "Det.limit_type": "max",  # text detection at most 960 px on the long side
+    "Det.limit_side_len": 960,
+    "Global.use_cls": False,  # no 180-degree rotation check
+    "Rec.rec_batch_num": 2,  # text lines recognised per batch
+}
+
+
 @lru_cache
 def _engine() -> RapidOCR:
-    return RapidOCR()  # loads the models once per process
+    return RapidOCR(params=ENGINE_SETTINGS)  # loads the models once per process
 
 
 def run_ocr(source: str | Path | BinaryIO) -> OcrResult:
     start = time.perf_counter()
-    image = ImageOps.exif_transpose(Image.open(source)).convert("RGB")  # undo phone rotation
+    image = Image.open(source)
+    # JPEG: decode straight at a reduced size, so a 12-30 megapixel phone photo never sits in memory
+    # full size (SROIE 423, 4854x6712, added 170 MB). Still at least MAX_SIDE, so no detail is lost.
+    image.draft("RGB", (MAX_SIDE, MAX_SIDE))
+    if image.mode in (
+        "1",
+        "P",
+    ):  # thumbnail can't smooth black-and-white or palette images: text goes jagged
+        image = image.convert(
+            "L" if image.mode == "1" else "RGBA" if "transparency" in image.info else "RGB"
+        )
+    # Shrink before rotating and converting: PNG and WebP can't decode small, so this keeps it to a
+    # single full-size copy (the upload's pixel limit bounds that copy).
     image.thumbnail((MAX_SIDE, MAX_SIDE))
+    image = ImageOps.exif_transpose(image)  # undo phone rotation
+    if (
+        "A" in image.getbands()
+    ):  # transparent areas would turn black: put the receipt on white paper
+        image = Image.alpha_composite(Image.new("RGBA", image.size, "white"), image.convert("RGBA"))
+    image = image.convert("RGB")
     out = _engine()(np.asarray(image))
 
     # RapidOCR returns None (not empty lists) when the image has no text.

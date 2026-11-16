@@ -2,6 +2,7 @@
 
 Run from apps/api:
     .venv\\Scripts\\python ..\\..\\eval\\categorise_eval.py
+Another embedding model: set EMBED_MODEL first, e.g. EMBED_MODEL=minishlab/potion-base-8M.
 Needs data/receipts/sroie_ocr_text.jsonl and data/labels/merchant_categories.csv.
 """
 
