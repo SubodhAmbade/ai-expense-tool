@@ -18,7 +18,11 @@ from app.tax_profiles import TaxProfile
 T = TypeVar("T")
 
 CURRENCY_PREFIX = re.compile(r"^(RM|MYR|CHF|EUR|USD|\$|€|£)?\s*")
-AMOUNT = re.compile(r"(?<![\d.,])\d{1,3}(?:,\d{3})*\.\d{2}(?![\d%])|(?<![\d.,])\d+\.\d{2}(?![\d%])")
+# Two decimals, or one ("1,193.4" on some POS printers); never a percentage.
+AMOUNT = re.compile(
+    r"(?<![\d.,])\d{1,3}(?:,\d{3})*\.\d{1,2}(?![\d%])|(?<![\d.,])\d+\.\d{1,2}(?![\d%])"
+)
+CENT = Decimal("0.01")
 
 # Ranked total rules: (pattern, rule confidence). The first rule with a match wins.
 TOTAL_RULES = [
@@ -36,6 +40,9 @@ TOTAL_RULES = [
         0.95,
     ),
     (re.compile(r"\b(TOTAL|TOTL|TTL)\b"), 0.9),
+    # "Amount RM 1,193.4" or "Amount" alone, not "Amount Tendered". Below the review threshold,
+    # so it only counts when the cash paid or the arithmetic agrees.
+    (re.compile(r"^AMOUNT\s*:?\s*(?:(?:RM|[A-Z]{3}|[$€£])\s*)?(?:\d[\d,]*\.\d{1,2})?$"), 0.7),
 ]
 CASH_RULES = [(re.compile(r"\b(CASH|VISA|MASTER\w*|CARD|PAID|PAYMENT|TENDER\w*)\b"), 0.6)]
 CHANGE_RULES = [(re.compile(r"\bCHANGE\b"), 0.9)]
@@ -50,7 +57,7 @@ KEYWORDS = ("TOTAL", "PAYABLE")  # read through one-letter OCR slips: TATAL, TOT
 WORD = re.compile(r"\b[A-Z]{4,7}\b")
 ROUNDING_MAX = Decimal("0.10")  # cash rounding moves a total by a few cents, never more
 ROUNDING = re.compile(r"ROUND\w*\s*(ADJ|\(|:|-?\.?\d|RM)")  # an adjustment row, not a rounded total
-SIGNED_AMOUNT = re.compile(r"(-?)\s*(\d*\.\d{2})\s*$")  # "-0.02", ".01"
+SIGNED_AMOUNT = re.compile(r"(-?)\s*(\d*\.\d{1,2})\s*$")  # "-0.02", ".01", "45.3"
 SUBTOTAL_RULES = [(re.compile(r"SUB\s*-?\s*TOTA|TOTAL\s*EXCL|AMOUNT\s*EXCL"), 0.85)]
 TAX_RULES = [
     (re.compile(r"TOTAL\s*(GST|TAX|VAT|SST)|(GST|TAX|VAT|SST)\s*(AMOUNT|AMT|TOTAL)"), 0.85),
@@ -71,6 +78,7 @@ DATE_PATTERNS = [  # (pattern, group order); 'a' = ambiguous day/month, resolved
         "dmy",
     ),
 ]
+NOT_PURCHASE_DATE = re.compile(r"EXPIR|VALID|\bEXP\b|BEST\s*BEFORE|USE\s*BY")  # QR, voucher
 MONTHS = "JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC".split()
 
 CURRENCIES = {  # token on the receipt -> ISO code. A bare "$" is ambiguous, so it is not here.
@@ -120,7 +128,7 @@ def _find_amount(
             if not amounts and AMOUNT.fullmatch(next_row):
                 amounts, i = [next_row], i + 1  # label and amount on separate rows
             if amounts:  # the amount is the right-most number on the row
-                value = Decimal(amounts[-1].replace(",", ""))
+                value = Decimal(amounts[-1].replace(",", "")).quantize(CENT)
                 if value > 0 or not positive:  # a total is never 0.00 (change can be)
                     hits.append((value, i))
         if hits:
@@ -185,6 +193,8 @@ def _merchant(raw: list[str], conf: list[float]) -> Field[str]:
 
 def _date(rows: list[str], conf: list[float], profile: TaxProfile) -> Field[date]:
     for i in sorted(range(len(rows)), key=lambda i: "DATE" not in rows[i]):  # labelled dates first
+        if NOT_PURCHASE_DATE.search(rows[i]):
+            continue
         for pattern, order in DATE_PATTERNS:
             pos = 0
             while m := pattern.search(rows[i], pos):

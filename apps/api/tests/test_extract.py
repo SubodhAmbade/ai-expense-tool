@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 
 from app.config import get_settings
-from app.extract import extract
+from app.extract import TOTAL_RULES, extract
 from app.ocr import OcrLine, OcrResult
 from app.tax_profiles import load_tax_profiles
 
@@ -144,3 +144,41 @@ def test_total_that_includes_gst_is_still_a_total() -> None:
         ocr("SUBTOTAL 100.00", "GST 6.00", "GRAND TOTAL INCLUDED GST 106.00"), PROFILES["my"]
     )
     assert result.total.value == Decimal("106.00")
+
+
+def test_cafe_receipt_with_one_decimal_amounts() -> None:
+    result = extract(
+        ocr(
+            "T305",
+            "365 Cafe",
+            "Order Time: 2024-04-30 15:13:24",
+            "Milk Tea RM 680.0",
+            "75% Sugar",
+            "Subtotal RM 1,274.0",
+            "Total Discount -RM 208.0",
+            "Service Charge(10%) RM 127.4",
+            "Amount RM 1,193.4",
+            "PAID (CASH) RM 1,193.4",
+            "Expiry Date: 3 November 2024 11:59:59PM",  # the e-invoice QR code, not the purchase
+        ),
+        PROFILES["my"],
+    )
+    assert result.date.value == date(2024, 4, 30)
+    assert result.subtotal.value == Decimal("1274.00")
+    assert result.total.value == Decimal("1193.40")
+    assert result.total.confidence < 0.8  # a bare "Amount" label needs the cash line to agree
+    assert result.cash.value == Decimal("1193.40")
+
+
+def test_bare_amount_label_is_not_the_cash_tendered() -> None:
+    bare_amount = TOTAL_RULES[-1][0]
+    assert bare_amount.search("AMOUNT RM 1,193.4") and bare_amount.search("AMOUNT")
+    for row in ["AMOUNT TENDERED RM 50.0", "AMOUNT PAID RM 50.0", "AMOUNT (RM)"]:
+        assert not bare_amount.search(row)
+    split = extract(ocr("Amount", "RM 45.3"), PROFILES["my"])  # label and amount on two rows
+    assert split.total.value == Decimal("45.30")
+
+
+def test_one_decimal_rounded_total_row() -> None:
+    result = extract(ocr("TOTAL 45.32", "ROUNDING RM 45.3"), PROFILES["my"])
+    assert result.total.value == Decimal("45.30")
