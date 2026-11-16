@@ -40,8 +40,10 @@ TOTAL_RULES = [
         0.95,
     ),
     (re.compile(r"\b(TOTAL|TOTL|TTL)\b"), 0.9),
-    (re.compile(r"^AMOUNT\b"), 0.7),  # "Amount RM 1,193.4": below the review threshold, so it
-]  # only counts when the cash paid or the arithmetic agrees
+    # "Amount RM 1,193.4" or "Amount" alone, not "Amount Tendered". Below the review threshold,
+    # so it only counts when the cash paid or the arithmetic agrees.
+    (re.compile(r"^AMOUNT\s*:?\s*(?:(?:RM|[A-Z]{3}|[$€£])\s*)?(?:\d[\d,]*\.\d{1,2})?$"), 0.7),
+]
 CASH_RULES = [(re.compile(r"\b(CASH|VISA|MASTER\w*|CARD|PAID|PAYMENT|TENDER\w*)\b"), 0.6)]
 CHANGE_RULES = [(re.compile(r"\bCHANGE\b"), 0.9)]
 NOT_TOTAL = re.compile(
@@ -55,7 +57,7 @@ KEYWORDS = ("TOTAL", "PAYABLE")  # read through one-letter OCR slips: TATAL, TOT
 WORD = re.compile(r"\b[A-Z]{4,7}\b")
 ROUNDING_MAX = Decimal("0.10")  # cash rounding moves a total by a few cents, never more
 ROUNDING = re.compile(r"ROUND\w*\s*(ADJ|\(|:|-?\.?\d|RM)")  # an adjustment row, not a rounded total
-SIGNED_AMOUNT = re.compile(r"(-?)\s*(\d*\.\d{2})\s*$")  # "-0.02", ".01"
+SIGNED_AMOUNT = re.compile(r"(-?)\s*(\d*\.\d{1,2})\s*$")  # "-0.02", ".01", "45.3"
 SUBTOTAL_RULES = [(re.compile(r"SUB\s*-?\s*TOTA|TOTAL\s*EXCL|AMOUNT\s*EXCL"), 0.85)]
 TAX_RULES = [
     (re.compile(r"TOTAL\s*(GST|TAX|VAT|SST)|(GST|TAX|VAT|SST)\s*(AMOUNT|AMT|TOTAL)"), 0.85),

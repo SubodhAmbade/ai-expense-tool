@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 
 from app.config import get_settings
-from app.extract import extract
+from app.extract import TOTAL_RULES, extract
 from app.ocr import OcrLine, OcrResult
 from app.tax_profiles import load_tax_profiles
 
@@ -168,3 +168,17 @@ def test_cafe_receipt_with_one_decimal_amounts() -> None:
     assert result.total.value == Decimal("1193.40")
     assert result.total.confidence < 0.8  # a bare "Amount" label needs the cash line to agree
     assert result.cash.value == Decimal("1193.40")
+
+
+def test_bare_amount_label_is_not_the_cash_tendered() -> None:
+    bare_amount = TOTAL_RULES[-1][0]
+    assert bare_amount.search("AMOUNT RM 1,193.4") and bare_amount.search("AMOUNT")
+    for row in ["AMOUNT TENDERED RM 50.0", "AMOUNT PAID RM 50.0", "AMOUNT (RM)"]:
+        assert not bare_amount.search(row)
+    split = extract(ocr("Amount", "RM 45.3"), PROFILES["my"])  # label and amount on two rows
+    assert split.total.value == Decimal("45.30")
+
+
+def test_one_decimal_rounded_total_row() -> None:
+    result = extract(ocr("TOTAL 45.32", "ROUNDING RM 45.3"), PROFILES["my"])
+    assert result.total.value == Decimal("45.30")
