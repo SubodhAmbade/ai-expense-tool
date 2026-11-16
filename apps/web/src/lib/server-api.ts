@@ -19,14 +19,15 @@ export async function supabaseServer() {
 // would bounce between / and /login forever.
 export async function apiGet(path: string): Promise<Response | null> {
   const { data } = await (await supabaseServer()).auth.getSession(); // the API verifies the token
+  const url = `${API_URL}${path}`;
   let res: Response;
   try {
-    res = await fetch(`${API_URL}${path}`, {
-      headers: { Authorization: `Bearer ${data.session?.access_token ?? ""}` },
-    });
-  } catch {
+    res = await fetch(url, { headers: { Authorization: `Bearer ${data.session?.access_token ?? ""}` } });
+  } catch (error) {
+    console.error(`API unreachable: GET ${url}`, error); // shows in the host's server logs
     return null;
   }
+  if (!res.ok) console.error(`API error: GET ${url} -> ${res.status}`);
   return res;
 }
 
