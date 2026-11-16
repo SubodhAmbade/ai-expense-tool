@@ -1,8 +1,5 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { Suspense } from "react";
-import { fetchReceipts } from "@/lib/api";
-import Sidebar from "./sidebar";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -20,31 +17,11 @@ export const metadata: Metadata = {
   description: "Receipt photos to accounting-ready expense data",
 };
 
+// The bare page; the app shell with the sidebar is in (app)/layout.tsx, so /login has none.
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-      <body className="font-sans">
-        <div className="flex min-h-screen flex-col md:flex-row">
-          <Sidebar
-            queueCount={
-              <Suspense fallback={null}>
-                <QueueCount />
-              </Suspense>
-            }
-          />
-          <main className="min-w-0 flex-1 px-5 py-8 md:px-10">{children}</main>
-        </div>
-      </body>
+      <body className="font-sans">{children}</body>
     </html>
-  );
-}
-
-async function QueueCount() {
-  const queue = await fetchReceipts("needs_review").catch(() => []);
-  if (queue.length === 0) return null;
-  return (
-    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
-      {queue.length}
-    </span>
   );
 }

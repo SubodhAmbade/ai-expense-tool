@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import { API_URL, CATEGORIES, label, type Receipt } from "@/lib/api";
+import { CATEGORIES, label, type Receipt } from "@/lib/api";
+import { apiFetch } from "@/lib/browser-api";
 
 const FIELDS = [
   { name: "merchant", label: "Merchant", type: "text", wide: true },
@@ -54,7 +55,7 @@ export default function ReviewForm({ receipt, nextHref }: { receipt: Editable; n
     );
     let res: Response;
     try {
-      res = await fetch(`${API_URL}/receipts/${receipt.id}`, {
+      res = await apiFetch(`/receipts/${receipt.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),

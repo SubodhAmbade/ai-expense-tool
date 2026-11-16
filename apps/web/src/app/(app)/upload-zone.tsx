@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type DragEvent, useRef, useState } from "react";
-import { API_URL } from "@/lib/api";
+import { apiFetch, supabaseBrowser } from "@/lib/browser-api";
 
 type Item = {
   key: string;
@@ -22,29 +22,32 @@ export default function UploadZone() {
 
   // One shared queue and one worker: reading a receipt is CPU-heavy and the API runs on a
   // small server, so a second drop joins the queue instead of starting a parallel upload.
-  const queue = useRef<{ key: string; file: File; profile: string }[]>([]);
+  const queue = useRef<{ key: string; file: File; profile: string; user?: string }[]>([]);
   const busy = useRef(false);
 
   const update = (key: string, patch: Partial<Item>) =>
     setItems((prev) => prev.map((it) => (it.key === key ? { ...it, ...patch } : it)));
 
   async function upload(files: File[]) {
-    const batch = files.map((file) => ({ key: crypto.randomUUID(), file, profile }));
+    // Who dropped them: each upload goes through only while that account is still signed in.
+    const user = (await supabaseBrowser().auth.getSession()).data.session?.user.id;
+    const batch = files.map((file) => ({ key: crypto.randomUUID(), file, profile, user }));
     setItems((prev) => [...batch.map(({ key, file }): Item => ({ key, name: file.name, state: "waiting" })), ...prev]);
     queue.current.push(...batch);
     if (busy.current) return; // the running worker will pick these up
     busy.current = true;
     let next;
     while ((next = queue.current.shift())) {
-      const { key, file, profile } = next;
+      const { key, file, profile, user } = next;
       update(key, { state: "reading" });
       try {
         const form = new FormData();
         form.append("file", file);
-        const res = await fetch(`${API_URL}/receipts?profile=${encodeURIComponent(profile)}`, {
-          method: "POST",
-          body: form,
-        });
+        const res = await apiFetch(
+          `/receipts?profile=${encodeURIComponent(profile)}`,
+          { method: "POST", body: form },
+          user,
+        );
         const body = await res.json().catch(() => ({}));
         if (!res.ok) {
           // FastAPI sends a list for field errors; only show detail when it's a sentence.

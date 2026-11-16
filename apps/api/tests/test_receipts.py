@@ -5,28 +5,39 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image, ImageDraw, ImageFont
 
+from app.auth import current_user
 from app.main import app
 from app.store import get_store
 
 
 class MemoryStore:
-    """Stands in for Supabase: same methods, rows kept in a dict."""
+    """Stands in for Supabase: same methods, rows kept in a dict, each owned by a user."""
 
     def __init__(self) -> None:
         self.rows: dict[str, dict] = {}
 
-    def save(self, image: bytes, content_type: str, row: dict) -> dict:
-        row = {**row, "id": str(uuid4()), "image_path": "x.png", "created_at": str(len(self.rows))}
+    def save(self, user_id: str, image: bytes, content_type: str, row: dict) -> dict:
+        n = str(len(self.rows))
+        row = {
+            **row,
+            "id": str(uuid4()),
+            "user_id": user_id,
+            "image_path": "x.png",
+            "created_at": n,
+        }
         self.rows[row["id"]] = row
         return row
 
-    def list(self, status: str | None) -> list[dict]:
-        return [r for r in self.rows.values() if status in (None, r["status"])]
+    def list(self, user_id: str, status: str | None) -> list[dict]:
+        rows = self.rows.values()
+        return [r for r in rows if r["user_id"] == user_id and status in (None, r["status"])]
 
-    def get(self, receipt_id: str) -> dict | None:
-        return self.rows.get(receipt_id)
+    def get(self, user_id: str, receipt_id: str) -> dict | None:
+        row = self.rows.get(receipt_id)
+        return row if row and row["user_id"] == user_id else None
 
-    def update(self, receipt_id: str, changes: dict) -> dict:
+    def update(self, user_id: str, receipt_id: str, changes: dict) -> dict:
+        assert self.rows[receipt_id]["user_id"] == user_id
         self.rows[receipt_id].update(changes)
         return self.rows[receipt_id]
 
@@ -34,10 +45,15 @@ class MemoryStore:
         return f"https://signed.example/{path}"
 
 
+SIGNED_IN = {"user": "user-a"}  # who the fake sign-in says is asking; tests can switch it
+
+
 @pytest.fixture
 def client():
     store = MemoryStore()
+    SIGNED_IN["user"] = "user-a"
     app.dependency_overrides[get_store] = lambda: store
+    app.dependency_overrides[current_user] = lambda: SIGNED_IN["user"]
     yield TestClient(app)
     app.dependency_overrides.clear()
 
@@ -117,9 +133,46 @@ def test_category_cannot_be_cleared(client: TestClient) -> None:
 
 def test_export_neutralises_spreadsheet_formulas(client: TestClient) -> None:
     store = app.dependency_overrides[get_store]()
-    store.rows["1"] = {"id": "1", "status": "confirmed", "merchant": "=HYPERLINK(evil)"}
-    store.rows["2"] = {"id": "2", "status": "confirmed", "merchant": "", "total_amount": "-5.00"}
-    store.rows["3"] = {"id": "3", "status": "confirmed", "merchant": "\tcmd"}
+    store.rows["1"] = {
+        "id": "1",
+        "user_id": "user-a",
+        "status": "confirmed",
+        "merchant": "=HYPERLINK(evil)",
+    }
+    store.rows["2"] = {
+        "id": "2",
+        "user_id": "user-a",
+        "status": "confirmed",
+        "merchant": "",
+        "total_amount": "-5.00",
+    }
+    store.rows["3"] = {"id": "3", "user_id": "user-a", "status": "confirmed", "merchant": "\tcmd"}
     text = client.get("/receipts/export.csv").text
     assert "'=HYPERLINK(evil)" in text and "'\tcmd" in text
     assert "-5.00" in text and "'-5.00" not in text  # refunds stay numbers
+
+
+def test_each_user_sees_only_their_own_receipts(client: TestClient) -> None:
+    png = receipt_png("SANYU STATIONERY SDN BHD", "TOTAL RM 9.00")
+    mine = client.post("/receipts", files={"file": ("r.png", png, "image/png")}).json()
+    client.patch(f"/receipts/{mine['id']}", json={"category": "other"})
+
+    SIGNED_IN["user"] = "user-b"
+    assert client.get("/receipts/export.csv").text.count("\n") == 1  # header row only
+    theirs = client.post("/receipts", files={"file": ("r.png", png, "image/png")}).json()
+
+    for user, own, other in (("user-a", mine, theirs), ("user-b", theirs, mine)):
+        SIGNED_IN["user"] = user
+        assert [r["id"] for r in client.get("/receipts").json()] == [own["id"]]
+        assert client.get(f"/receipts/{own['id']}").status_code == 200
+        assert client.get(f"/receipts/{other['id']}").status_code == 404  # not 403: don't reveal it
+        assert (
+            client.patch(f"/receipts/{other['id']}", json={"category": "meals"}).status_code == 404
+        )
+
+
+def test_receipts_need_a_sign_in() -> None:
+    client = TestClient(app)  # no fake sign-in: the real token check runs
+    assert client.get("/receipts").status_code == 401
+    assert client.get("/receipts", headers={"Authorization": "Bearer nonsense"}).status_code == 401
+    assert client.get("/health").status_code == 200  # stays open for the hosting health check

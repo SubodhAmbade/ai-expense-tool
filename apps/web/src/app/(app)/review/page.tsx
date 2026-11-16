@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { fetchReceipts, type Receipt } from "@/lib/api";
+import { fetchReceipts } from "@/lib/server-api";
 import ReceiptTable from "../receipt-table";
 
 export default function ReviewQueuePage() {
@@ -18,10 +18,8 @@ export default function ReviewQueuePage() {
 }
 
 async function Queue() {
-  let queue: Receipt[];
-  try {
-    queue = (await fetchReceipts("needs_review")).reverse();
-  } catch {
+  const queue = (await fetchReceipts("needs_review"))?.reverse(); // oldest first
+  if (!queue) {
     return <p className="text-sm text-red-700">Couldn&apos;t load the queue. Is the API running?</p>;
   }
   if (queue.length === 0) {

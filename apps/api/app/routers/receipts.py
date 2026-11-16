@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile
 from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, Field, field_validator
 
+from app.auth import UserDep
 from app.categorise import CATEGORIES
 from app.config import get_settings
 from app.pipeline import process
@@ -49,7 +50,7 @@ class ReceiptUpdate(BaseModel):
 
 
 @router.post("", status_code=201)
-def upload(file: UploadFile, store: StoreDep, profile: str | None = None) -> dict:
+def upload(file: UploadFile, store: StoreDep, user: UserDep, profile: str | None = None) -> dict:
     image = file.file.read(MAX_BYTES + 1)
     if len(image) > MAX_BYTES:
         raise HTTPException(413, "Image is larger than 10 MB")
@@ -70,22 +71,22 @@ def upload(file: UploadFile, store: StoreDep, profile: str | None = None) -> dic
         row = process(image, _profiles()[code])
     except (UnidentifiedImageError, OSError):  # damaged data that only fails on a full decode
         raise HTTPException(422, "That file isn't a readable image") from None
-    return store.save(image, FORMATS[detected], row)
+    return store.save(user, image, FORMATS[detected], row)
 
 
 @router.get("")
 def list_receipts(
-    store: StoreDep, status: Literal["needs_review", "confirmed"] | None = None
+    store: StoreDep, user: UserDep, status: Literal["needs_review", "confirmed"] | None = None
 ) -> list[dict]:
-    return store.list(status)
+    return store.list(user, status)
 
 
 @router.get("/export.csv")  # declared before /{receipt_id} so the path isn't read as an id
-def export_csv(store: StoreDep) -> Response:
+def export_csv(store: StoreDep, user: UserDep) -> Response:
     out = StringIO()
     writer = csv.DictWriter(out, CSV_COLUMNS, extrasaction="ignore")
     writer.writeheader()
-    for row in store.list("confirmed"):
+    for row in store.list(user, "confirmed"):
         merchant = row.get("merchant") or ""
         if merchant[:1] in (
             "=",
@@ -102,16 +103,16 @@ def export_csv(store: StoreDep) -> Response:
 
 
 @router.get("/{receipt_id}")
-def get_receipt(receipt_id: UUID, store: StoreDep) -> dict:
-    row = store.get(str(receipt_id))
-    if row is None:
+def get_receipt(receipt_id: UUID, store: StoreDep, user: UserDep) -> dict:
+    row = store.get(user, str(receipt_id))
+    if row is None:  # also someone else's receipt: don't reveal that it exists
         raise HTTPException(404, "Receipt not found")
     return {**row, "image_url": store.image_url(row["image_path"])}
 
 
 @router.patch("/{receipt_id}")
-def confirm(receipt_id: UUID, update: ReceiptUpdate, store: StoreDep) -> dict:
-    row = store.get(str(receipt_id))
+def confirm(receipt_id: UUID, update: ReceiptUpdate, store: StoreDep, user: UserDep) -> dict:
+    row = store.get(user, str(receipt_id))
     if row is None:
         raise HTTPException(404, "Receipt not found")
     changes = update.model_dump(mode="json", exclude_unset=True)
@@ -120,6 +121,5 @@ def confirm(receipt_id: UUID, update: ReceiptUpdate, store: StoreDep) -> dict:
     if changes.get("category", row["category"]) != row["category"]:
         changes["category_source"] = "human"
     now = datetime.now(UTC).isoformat()
-    return store.update(
-        str(receipt_id), {**changes, "status": "confirmed", "confirmed_at": now, "updated_at": now}
-    )
+    changes |= {"status": "confirmed", "confirmed_at": now, "updated_at": now}
+    return store.update(user, str(receipt_id), changes)

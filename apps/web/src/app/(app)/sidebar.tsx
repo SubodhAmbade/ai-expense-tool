@@ -13,12 +13,12 @@ const NAV = [
   { href: "/policy", label: "Policy", icon: "M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z" },
 ];
 
-export default function Sidebar({ queueCount }: { queueCount: ReactNode }) {
+export default function Sidebar({ queueCount, account }: { queueCount: ReactNode; account: ReactNode }) {
   const [open, setOpen] = useState(false); // the menu on phone-width screens
   const nav = { open, close: () => setOpen(false), queueCount };
 
   return (
-    <aside className="border-b border-gray-200 bg-white md:sticky md:top-0 md:h-screen md:w-60 md:shrink-0 md:border-r md:border-b-0">
+    <aside className="border-b border-gray-200 bg-white md:sticky md:top-0 md:flex md:h-screen md:w-60 md:shrink-0 md:flex-col md:border-r md:border-b-0">
       <div className="flex items-center justify-between px-5 py-3 md:py-6">
         <Link href="/" className="flex items-center gap-2.5 font-semibold">
           <span aria-hidden className="flex size-8 items-center justify-center rounded-lg bg-blue-700 text-white">
@@ -45,6 +45,7 @@ export default function Sidebar({ queueCount }: { queueCount: ReactNode }) {
       <Suspense fallback={<Nav pathname="" {...nav} />}>
         <CurrentNav {...nav} />
       </Suspense>
+      <div className={`${open ? "block" : "hidden"} md:mt-auto md:block`}>{account}</div>
     </aside>
   );
 }
