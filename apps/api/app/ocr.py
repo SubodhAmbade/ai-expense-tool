@@ -55,10 +55,22 @@ def run_ocr(source: str | Path | BinaryIO) -> OcrResult:
     # JPEG: decode straight at a reduced size, so a 12-30 megapixel phone photo never sits in memory
     # full size (SROIE 423, 4854x6712, added 170 MB). Still at least MAX_SIDE, so no detail is lost.
     image.draft("RGB", (MAX_SIDE, MAX_SIDE))
+    if image.mode in (
+        "1",
+        "P",
+    ):  # thumbnail can't smooth black-and-white or palette images: text goes jagged
+        image = image.convert(
+            "L" if image.mode == "1" else "RGBA" if "transparency" in image.info else "RGB"
+        )
     # Shrink before rotating and converting: PNG and WebP can't decode small, so this keeps it to a
     # single full-size copy (the upload's pixel limit bounds that copy).
     image.thumbnail((MAX_SIDE, MAX_SIDE))
-    image = ImageOps.exif_transpose(image).convert("RGB")  # undo phone rotation
+    image = ImageOps.exif_transpose(image)  # undo phone rotation
+    if (
+        "A" in image.getbands()
+    ):  # transparent areas would turn black: put the receipt on white paper
+        image = Image.alpha_composite(Image.new("RGBA", image.size, "white"), image.convert("RGBA"))
+    image = image.convert("RGB")
     out = _engine()(np.asarray(image))
 
     # RapidOCR returns None (not empty lists) when the image has no text.

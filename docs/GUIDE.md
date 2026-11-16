@@ -172,7 +172,7 @@ flowchart LR
 | `apps/web/src/app/` | browser | Sidebar shell; dashboard with drop zone and month summary; review queue; all receipts; review page with Confirm & next; export; policy (planned rules) |
 | `eval/extract_eval.py` | folder of `.ocr.json` + SROIE keys → report | Scores extraction and validation |
 | `eval/label_mining.py` | folder of `.ocr.json` + SROIE keys → report | Which lines hold the true total, why each miss happened, how many receipts add a service charge |
-| `eval/memory_check.py` | folder of receipt images → memory and time per stage | Whether the API fits a 512 MB server; add `bert` to include the embedding model |
+| `eval/memory_check.py` | folder of receipt images → memory and time per stage | Whether the API fits a 512 MB server; add `--bert` to include the embedding model |
 | `eval/categorise_eval.py` | OCR text + category labels → report | Compares the categorisers on unseen merchants |
 
 Each stage depends only on the previous stage's output model, never on its internals. Swapping the

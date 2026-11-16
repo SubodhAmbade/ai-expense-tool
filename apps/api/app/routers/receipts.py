@@ -23,9 +23,9 @@ MAX_BYTES = 10 * 1024 * 1024  # 10 MB, plenty for a phone photo
 FORMATS = {"JPEG": "image/jpeg", "PNG": "image/png", "WEBP": "image/webp"}  # what Pillow detects
 # Largest image to decode, in pixels. 10 MB of PNG can hold a huge image (it compresses well), and
 # only JPEG can be decoded at a reduced size, so PNG and WebP get less. Measured with
-# eval/memory_check.py: 60 MP JPEG peaks at 342 MB, 20 MP PNG with transparency at 401 MB; 40 MP
-# PNG reached 569 MB, over a 512 MB server.
-MAX_PIXELS = {"JPEG": 60_000_000, "PNG": 20_000_000, "WEBP": 20_000_000}
+# eval/memory_check.py, whole API: a 50 MP progressive JPEG (the hungriest kind) peaks at 415 MB
+# (60 MP: 443 MB), a 20 MP PNG with transparency at 401 MB (40 MP: 569 MB, over a 512 MB server).
+MAX_PIXELS = {"JPEG": 50_000_000, "PNG": 20_000_000, "WEBP": 20_000_000}
 CSV_COLUMNS = ["id", "receipt_date", "merchant", "category", "currency"]
 CSV_COLUMNS += ["net_amount", "tax_amount", "total_amount"]
 

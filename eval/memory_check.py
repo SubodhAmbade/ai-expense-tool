@@ -4,11 +4,12 @@ Runs the pipeline in one process, as the API does, and prints resident memory (R
 after each stage. Linux reads /proc (what servers run); macOS uses the resource module; Windows
 needs `pip install psutil` and counts memory a little differently, so compare the steps between
 stages, not the totals.
-    python eval/memory_check.py <folder of receipt images> [count] [bert]
+    python eval/memory_check.py <folder of receipt images> [count] [--bert]
 Reads the JPEG, PNG and WebP files in the folder; put a large PNG in it to check the PNG path.
-Add "bert" to also load the embedding model (EMBED_MODEL picks which).
+Add --bert to also load the embedding model (EMBED_MODEL picks which).
 """
 
+import argparse
 import sys
 import time
 from pathlib import Path
@@ -38,13 +39,15 @@ def stage(name: str, started: float) -> None:
     print(f"{name:<44} {memory()}   {time.perf_counter() - started:6.2f} s")
 
 
-folder, options = Path(sys.argv[1]), sys.argv[2:]
-count = next((int(o) for o in options if o.isdigit()), 10)
-with_bert = "bert" in options
-images = sorted(
-    p for p in folder.iterdir() if p.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}
-)
-images = images[:count]
+parser = argparse.ArgumentParser(description="Memory and time per pipeline stage.")
+parser.add_argument("folder", type=Path, help="folder of receipt images (JPEG, PNG, WebP)")
+parser.add_argument("count", type=int, nargs="?", default=10, help="how many to read (default 10)")
+parser.add_argument("--bert", action="store_true", help="also load the embedding model")
+args = parser.parse_args()
+suffixes = {".jpg", ".jpeg", ".png", ".webp"}
+images = sorted(p for p in args.folder.iterdir() if p.suffix.lower() in suffixes)[: args.count]
+if not images:
+    sys.exit(f"No JPEG, PNG or WebP images in {args.folder}")
 
 t = time.perf_counter()
 from app.categorise import by_examples, by_rules, embed  # noqa: E402
@@ -72,7 +75,7 @@ for path in images:
 stage(f"{len(images)} receipts: OCR + extract + validate + rules", t)
 print(f"{'':<44} {(time.perf_counter() - t) / len(images):.2f} s per receipt")
 
-if not with_bert:
+if not args.bert:
     sys.exit()
 
 t = time.perf_counter()
