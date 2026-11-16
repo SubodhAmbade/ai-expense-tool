@@ -32,7 +32,22 @@ export default function LoginPage(props: PageProps<"/login">) {
 
 async function Form({ searchParams }: { searchParams: PageProps<"/login">["searchParams"] }) {
   const { reason, next } = await searchParams;
-  // Only a path on this site: "//evil.com" or "/\evil.com" would leave it.
-  const safe = typeof next === "string" && next.startsWith("/") && !/^\/[\\/]/.test(next);
-  return <LoginForm idle={reason === "idle"} next={safe ? next : "/"} />;
+  return <LoginForm idle={reason === "idle"} next={sameSite(next)} />;
+}
+
+const BASE = "http://app.invalid"; // any fixed origin: only "does it stay on it" matters
+
+const OFF_SITE = /^\/[\\/]/; // "//evil.com" and "/\evil.com" are other sites, not paths
+
+// The path to return to after sign-in, only if it stays on this site; otherwise "/". Browsers drop
+// tabs and newlines from URLs ("/\t/evil.com" becomes "//evil.com"), so control characters are
+// refused; parsing can also produce an off-site path ("/..//evil.com" becomes "//evil.com"), so
+// the parsed result is checked again.
+function sameSite(next: string | string[] | undefined): string {
+  if (typeof next !== "string" || !next.startsWith("/") || OFF_SITE.test(next) || /[\u0000-\u001f\u007f]/.test(next)) {
+    return "/";
+  }
+  const url = new URL(next, BASE);
+  const path = url.pathname + url.search + url.hash;
+  return url.origin === BASE && !OFF_SITE.test(path) ? path : "/";
 }
