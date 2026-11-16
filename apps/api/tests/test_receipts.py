@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image, ImageDraw, ImageFont
 
+import app.routers.receipts as receipts_router
 from app.auth import current_user
 from app.main import app
 from app.store import get_store
@@ -176,3 +177,15 @@ def test_receipts_need_a_sign_in() -> None:
     assert client.get("/receipts").status_code == 401
     assert client.get("/receipts", headers={"Authorization": "Bearer nonsense"}).status_code == 401
     assert client.get("/health").status_code == 200  # stays open for the hosting health check
+
+
+def test_images_over_the_pixel_limit_are_refused(client: TestClient, monkeypatch) -> None:
+    # A small file can still decode into a huge image (PNG compresses well); the limit is checked
+    # from the header, before decoding. Lowered here so the test image stays small.
+    monkeypatch.setitem(receipts_router.MAX_PIXELS, "PNG", 10_000)
+    big = Image.new("RGB", (200, 100), "white")  # 20,000 pixels
+    buffer = BytesIO()
+    big.save(buffer, "PNG")
+    res = client.post("/receipts", files={"file": ("big.png", buffer.getvalue(), "image/png")})
+    assert res.status_code == 413
+    assert "MP" in res.json()["detail"]

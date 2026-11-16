@@ -55,8 +55,10 @@ def run_ocr(source: str | Path | BinaryIO) -> OcrResult:
     # JPEG: decode straight at a reduced size, so a 12-30 megapixel phone photo never sits in memory
     # full size (SROIE 423, 4854x6712, added 170 MB). Still at least MAX_SIDE, so no detail is lost.
     image.draft("RGB", (MAX_SIDE, MAX_SIDE))
-    image = ImageOps.exif_transpose(image).convert("RGB")  # undo phone rotation
+    # Shrink before rotating and converting: PNG and WebP can't decode small, so this keeps it to a
+    # single full-size copy (the upload's pixel limit bounds that copy).
     image.thumbnail((MAX_SIDE, MAX_SIDE))
+    image = ImageOps.exif_transpose(image).convert("RGB")  # undo phone rotation
     out = _engine()(np.asarray(image))
 
     # RapidOCR returns None (not empty lists) when the image has no text.

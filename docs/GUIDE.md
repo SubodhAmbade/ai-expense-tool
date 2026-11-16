@@ -250,6 +250,7 @@ docs/            this guide
 | Total rules | "TOTAL AFTER ADJ" ranks with "TOTAL ROUNDED"; a total is never 0.00; rows after a GST summary heading and "TOTAL INCLUDED GST @ 6%" lines are ignored | Each came from a miss on the development receipts; the summary rule held on all 200 receipts that print one |
 | OCR slips | "TOTAL" and "PAYABLE" match through one wrong letter (TATAL, TOTAI, POYABLE) | Six development misses; nothing else in the rules relies on near-matches |
 | OCR memory | JPEGs decoded at reduced size; text detection capped at 960 px; 2 text lines per batch; no rotation model | Peak 708 → 361 MB and 3.7 → 2.2 s per receipt on 2 cores, same accuracy: fits Render's free 512 MB. One 33-megapixel SROIE photo alone added 170 MB |
+| Image size limit | At most 60 megapixels for JPEG, 20 for PNG and WebP, read from the file header before decoding | 10 MB of PNG can hold a huge image, and only JPEG decodes at a reduced size: a 1 MB, 33-megapixel PNG took the API to 594 MB. With the limit and shrink-first decoding, the worst case measured 401 MB |
 | Categories in the app | Rules only | Render's free tier has 512 MB and 0.1 CPU; the embedding methods are measured in `eval/` and the notebook, and can be switched on with more memory |
 | Service charge | Not a separate field | Only 9 of 350 development receipts add one, and just 2 of those fail the arithmetic check |
 | Currency | Never assumed. A bare `$`, or no symbol at all, means low confidence → review | Expense tools see travel receipts, where a missing symbol often means a foreign currency |

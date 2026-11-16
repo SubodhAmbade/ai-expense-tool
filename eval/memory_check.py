@@ -1,9 +1,11 @@
 """How much memory and time the API needs, stage by stage: does it fit a 512 MB server?
 
 Runs the pipeline in one process, as the API does, and prints resident memory (RSS) and peak
-after each stage. Linux reads /proc (what servers run); elsewhere it needs `pip install psutil`.
-Windows counts memory a little differently, so compare the steps between stages, not the totals.
+after each stage. Linux reads /proc (what servers run); macOS uses the resource module; Windows
+needs `pip install psutil` and counts memory a little differently, so compare the steps between
+stages, not the totals.
     python eval/memory_check.py <folder of receipt images> [count] [bert]
+Reads the JPEG, PNG and WebP files in the folder; put a large PNG in it to check the PNG path.
 Add "bert" to also load the embedding model (EMBED_MODEL picks which).
 """
 
@@ -16,25 +18,33 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "apps" / "api"))
 
 def memory() -> str:
     proc = Path("/proc/self/status")
-    if proc.exists():
+    if proc.exists():  # Linux
         status = dict(line.split(":", 1) for line in proc.read_text().splitlines() if ":" in line)
         now, peak = (int(status[k].split()[0]) // 1024 for k in ("VmRSS", "VmHWM"))
-    else:  # Windows or macOS
-        import psutil
+        return f"{now:4d} MB now, {peak:4d} MB peak"
+    import psutil
 
-        info = psutil.Process().memory_info()
-        now = info.rss // 2**20
-        peak = getattr(info, "peak_wset", info.rss) // 2**20  # peak only on Windows
-    return f"{now:4d} MB now, {peak:4d} MB peak"
+    info = psutil.Process().memory_info()
+    if hasattr(info, "peak_wset"):  # Windows
+        peak = f"{info.peak_wset // 2**20:4d} MB"
+    else:  # macOS: the resource module's high-water mark, in bytes there
+        import resource
+
+        peak = f"{resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 2**20:4d} MB"
+    return f"{info.rss // 2**20:4d} MB now, {peak} peak"
 
 
 def stage(name: str, started: float) -> None:
     print(f"{name:<44} {memory()}   {time.perf_counter() - started:6.2f} s")
 
 
-folder, count = Path(sys.argv[1]), int(sys.argv[2]) if len(sys.argv) > 2 else 10
-with_bert = "bert" in sys.argv[3:]
-images = sorted(folder.glob("*.jpg"))[:count]
+folder, options = Path(sys.argv[1]), sys.argv[2:]
+count = next((int(o) for o in options if o.isdigit()), 10)
+with_bert = "bert" in options
+images = sorted(
+    p for p in folder.iterdir() if p.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}
+)
+images = images[:count]
 
 t = time.perf_counter()
 from app.categorise import by_examples, by_rules, embed  # noqa: E402

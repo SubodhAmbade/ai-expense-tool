@@ -21,6 +21,11 @@ router = APIRouter(prefix="/receipts", tags=["receipts"])
 StoreDep = Annotated[Store, Depends(get_store)]
 MAX_BYTES = 10 * 1024 * 1024  # 10 MB, plenty for a phone photo
 FORMATS = {"JPEG": "image/jpeg", "PNG": "image/png", "WEBP": "image/webp"}  # what Pillow detects
+# Largest image to decode, in pixels. 10 MB of PNG can hold a huge image (it compresses well), and
+# only JPEG can be decoded at a reduced size, so PNG and WebP get less. Measured with
+# eval/memory_check.py: 60 MP JPEG peaks at 342 MB, 20 MP PNG with transparency at 401 MB; 40 MP
+# PNG reached 569 MB, over a 512 MB server.
+MAX_PIXELS = {"JPEG": 60_000_000, "PNG": 20_000_000, "WEBP": 20_000_000}
 CSV_COLUMNS = ["id", "receipt_date", "merchant", "category", "currency"]
 CSV_COLUMNS += ["net_amount", "tax_amount", "total_amount"]
 
@@ -57,13 +62,21 @@ def upload(file: UploadFile, store: StoreDep, user: UserDep, profile: str | None
     # Trust the bytes, not the browser's label: check what the file really is.
     try:
         with Image.open(BytesIO(image)) as img:
-            detected = img.format
+            detected, pixels = (
+                img.format,
+                img.width * img.height,
+            )  # read from the header, not decoded
             img.verify()
     except (UnidentifiedImageError, OSError, SyntaxError, Image.DecompressionBombError):
         # SyntaxError: Pillow's signal for a damaged PNG chunk, e.g. a bad checksum
         raise HTTPException(422, "That file isn't a readable image") from None
     if detected not in FORMATS:
         raise HTTPException(415, f"Upload a JPEG, PNG or WebP image, not {detected}")
+    if pixels > MAX_PIXELS[detected]:
+        limit = MAX_PIXELS[detected] // 1_000_000
+        raise HTTPException(
+            413, f"Image is too large ({pixels // 1_000_000} MP); the limit is {limit} MP"
+        )
     code = profile or get_settings().default_profile
     if code not in _profiles():
         raise HTTPException(422, f"Unknown profile '{code}'; known: {', '.join(_profiles())}")
