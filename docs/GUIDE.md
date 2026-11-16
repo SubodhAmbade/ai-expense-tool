@@ -172,6 +172,7 @@ flowchart LR
 | `apps/web/src/app/` | browser | Sidebar shell; dashboard with drop zone and month summary; review queue; all receipts; review page with Confirm & next; export; policy (planned rules) |
 | `eval/extract_eval.py` | folder of `.ocr.json` + SROIE keys → report | Scores extraction and validation |
 | `eval/label_mining.py` | folder of `.ocr.json` + SROIE keys → report | Which lines hold the true total, why each miss happened, how many receipts add a service charge |
+| `eval/memory_check.py` | folder of receipt images → memory and time per stage | Whether the API fits a 512 MB server; add `bert` to include the embedding model |
 | `eval/categorise_eval.py` | OCR text + category labels → report | Compares the categorisers on unseen merchants |
 
 Each stage depends only on the previous stage's output model, never on its internals. Swapping the
@@ -248,6 +249,8 @@ docs/            this guide
 | Rounding | A rounding row *below* the total is added; one *above* is already included. An adjustment must be under 0.10; a larger "ROUNDING" amount within 0.10 of the total *is* the rounded total | Learned from the data: receipts print both layouts, and "ROUNDING RM 45.35" caused the ~2× totals |
 | Total rules | "TOTAL AFTER ADJ" ranks with "TOTAL ROUNDED"; a total is never 0.00; rows after a GST summary heading and "TOTAL INCLUDED GST @ 6%" lines are ignored | Each came from a miss on the development receipts; the summary rule held on all 200 receipts that print one |
 | OCR slips | "TOTAL" and "PAYABLE" match through one wrong letter (TATAL, TOTAI, POYABLE) | Six development misses; nothing else in the rules relies on near-matches |
+| OCR memory | JPEGs decoded at reduced size; text detection capped at 960 px; 2 text lines per batch; no rotation model | Peak 708 → 361 MB and 3.7 → 2.2 s per receipt on 2 cores, same accuracy: fits Render's free 512 MB. One 33-megapixel SROIE photo alone added 170 MB |
+| Categories in the app | Rules only | Render's free tier has 512 MB and 0.1 CPU; the embedding methods are measured in `eval/` and the notebook, and can be switched on with more memory |
 | Service charge | Not a separate field | Only 9 of 350 development receipts add one, and just 2 of those fail the arithmetic check |
 | Currency | Never assumed. A bare `$`, or no symbol at all, means low confidence → review | Expense tools see travel receipts, where a missing symbol often means a foreign currency |
 | Date order | Per profile; `unknown` for generic | `03/04` can't be resolved without knowing the region |
@@ -300,6 +303,11 @@ has its correct company, date, address and total.
 - **Error analysis before rules.** `eval/label_mining.py` lists, for every development receipt,
   which lines print the true total and why a miss happened. Rule changes are made from that report
   only, then scored once on the test receipts.
+- **Re-run OCR after changing its settings.** Saved `.ocr.json` files keep the output of the
+  settings that made them, so scores from old files describe the old OCR.
+- **Memory and speed** come from `eval/memory_check.py`, which runs the whole API in one process.
+  Servers bill CPU in fractions: Render's free tier has 0.1 CPU, so expect roughly ten times the
+  per-receipt time measured on a laptop core.
 
 **Categories** are scored differently, because SROIE has no category answers:
 

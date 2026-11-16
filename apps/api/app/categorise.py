@@ -6,6 +6,7 @@ Three interchangeable methods, compared in eval/categorise_eval.py:
   by_examples     embedding similarity to labelled receipts (nearest neighbours)
 """
 
+import os
 import re
 from functools import lru_cache
 from typing import Literal
@@ -79,7 +80,9 @@ def by_rules(text: str) -> Suggestion:
 def _model():
     from fastembed import TextEmbedding  # imported here so rules work without the model installed
 
-    return TextEmbedding("BAAI/bge-small-en-v1.5")
+    # A setting so the eval can compare models, e.g. EMBED_MODEL=minishlab/potion-base-8M (a 30 MB
+    # static model, much lighter than this 67 MB transformer).
+    return TextEmbedding(os.environ.get("EMBED_MODEL", "BAAI/bge-small-en-v1.5"))
 
 
 def embed(texts: list[str]) -> np.ndarray:

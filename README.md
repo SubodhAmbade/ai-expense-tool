@@ -53,9 +53,9 @@ Rules were developed on receipts 000–349, then frozen and measured once on 350
 
 | Field | Accuracy | Confident (≥ 0.8) | Accuracy when confident |
 |---|---|---|---|
-| Merchant | 95% | 87% | 99% |
-| Date | 100% | 92% | 100% |
-| Total | 92% | 93% | 96% |
+| Merchant | 94% | 87% | 99% |
+| Date | 100% | 93% | 100% |
+| Total | 93% | 93% | 95% |
 
 Error analysis on the development receipts (`eval/label_mining.py`) found the misses came from
 how rules were applied, not missing keywords: a rounded total read as a rounding adjustment (the
@@ -63,15 +63,19 @@ how rules were applied, not missing keywords: a rounded total read as a rounding
 GST summary table mistaken for the total. Fixing those took the test-set total from 87% to 92%
 with no extra wrong auto-accepts.
 
+**Runs in 512 MB.** Tuning OCR for a free 512 MB server (decode phone photos at a reduced size, read
+two text lines at a time, skip the rotation model) took peak memory from 708 MB to 361 MB and
+3.7 s to 2.2 s per receipt on 2 cores, with the accuracy above (`eval/memory_check.py`).
+
 **Validate** (plain-code checks; a total is only accepted when `subtotal + tax` or `cash − change` confirms it):
 
 | | |
 |---|---|
-| Receipts auto-accepted | 31% |
-| Totals correct among auto-accepted | 97% (30 of 31) |
-| Merchant + date + total all correct among auto-accepted | 93% (28 of 30 with full answers) |
+| Receipts auto-accepted | 30% |
+| Totals correct among auto-accepted | 97% (29 of 30) |
+| Merchant + date + total all correct among auto-accepted | 93% (27 of 29 with full answers) |
 
-The other 69% go to review with a stated reason. Most common: total not confirmed by any check,
+The other 70% go to review with a stated reason. Most common: total not confirmed by any check,
 no currency printed (currency is never assumed), low-confidence merchant.
 
 **Categorise** (suggestions only; a person can always change them). Compared on 201 receipts from 76
