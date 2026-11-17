@@ -96,6 +96,7 @@ async function ReceiptDetail({ params }: { params: PageProps<"/receipts/[id]">["
               tax_amount: receipt.tax_amount,
               total_amount: receipt.total_amount,
               category: receipt.category,
+              note: receipt.note,
             }}
           />
         </section>

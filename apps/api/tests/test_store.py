@@ -1,6 +1,7 @@
 import pytest
 
 import app.store as store_module
+from app.routers.receipts import CSV_COLUMNS
 from app.store import PAGE, Store
 
 
@@ -11,8 +12,10 @@ class FakeQuery:
         self.db = db
         self.rows = db.rows
         self.changes: dict | None = None
+        self.columns = "*"
 
-    def select(self, *_):
+    def select(self, columns: str):  # like Supabase, return only the named columns
+        self.columns = columns
         return self
 
     def order(self, *_, **__):
@@ -43,7 +46,8 @@ class FakeQuery:
     def execute(self):
         for row in self.rows if self.changes else ():
             row.update(self.changes)
-        self.data = self.rows
+        names = None if self.columns == "*" else self.columns.split(", ")
+        self.data = [{k: r.get(k) for k in names} if names else r for r in self.rows]
         return self
 
 
@@ -103,3 +107,11 @@ def test_every_query_is_limited_to_the_signed_in_user(monkeypatch) -> None:
     with pytest.raises(IndexError):  # nothing of user-a's matches, so nothing changes
         store.update("user-a", "2", {"category": "meals"})
     assert "category" not in fake.rows[1]
+
+
+def test_list_returns_every_column_the_export_needs(monkeypatch) -> None:
+    fake = FakeClient()
+    fake.rows = [{"id": "1", "user_id": "user-a", "status": "confirmed", "note": "Client lunch"}]
+    monkeypatch.setattr(store_module, "_client", lambda: fake)
+    [row] = Store().list("user-a", "confirmed")
+    assert set(CSV_COLUMNS) <= set(row) and row["note"] == "Client lunch"

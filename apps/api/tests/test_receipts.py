@@ -86,12 +86,16 @@ def test_upload_review_confirm_export(client: TestClient) -> None:
     fetched = client.get(f"/receipts/{row['id']}").json()
     assert fetched["image_url"].startswith("https://")
 
-    patched = client.patch(f"/receipts/{row['id']}", json={"category": "other"}).json()
-    assert (patched["category"], patched["category_source"]) == ("other", "human")
+    note = "Client lunch, GST added by hand"
+    patched = client.patch(f"/receipts/{row['id']}", json={"category": "other", "note": note})
+    assert (patched.json()["category"], patched.json()["category_source"]) == ("other", "human")
+    assert client.get(f"/receipts/{row['id']}").json()["note"] == note
+    too_long = client.patch(f"/receipts/{row['id']}", json={"note": "x" * 501})
+    assert too_long.status_code == 422
 
     csv = client.get("/receipts/export.csv")
     assert csv.headers["content-type"].startswith("text/csv")
-    assert "SANYU STATIONERY SDN BHD" in csv.text and "9.00" in csv.text
+    assert "SANYU STATIONERY SDN BHD" in csv.text and "9.00" in csv.text and note in csv.text
 
 
 def test_unclear_receipt_goes_to_review(client: TestClient) -> None:
@@ -148,8 +152,9 @@ def test_export_neutralises_spreadsheet_formulas(client: TestClient) -> None:
         "total_amount": "-5.00",
     }
     store.rows["3"] = {"id": "3", "user_id": "user-a", "status": "confirmed", "merchant": "\tcmd"}
+    store.rows["4"] = {"id": "4", "user_id": "user-a", "status": "confirmed", "note": "@SUM(A1)"}
     text = client.get("/receipts/export.csv").text
-    assert "'=HYPERLINK(evil)" in text and "'\tcmd" in text
+    assert "'=HYPERLINK(evil)" in text and "'\tcmd" in text and "'@SUM(A1)" in text
     assert "-5.00" in text and "'-5.00" not in text  # refunds stay numbers
 
 

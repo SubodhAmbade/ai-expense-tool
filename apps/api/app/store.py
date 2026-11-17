@@ -10,8 +10,8 @@ from app.config import get_settings
 BUCKET = "receipts"
 LIST_COLUMNS = (
     "id, created_at, confirmed_at, status, merchant, receipt_date, currency, "
-    "net_amount, tax_amount, total_amount, category, validation_errors"
-)
+    "net_amount, tax_amount, total_amount, category, validation_errors, note"
+)  # also what the CSV export reads: a column missing here comes out empty there
 EXTENSIONS = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 PAGE = 1000  # Supabase returns at most this many rows per request
 
