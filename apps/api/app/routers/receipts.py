@@ -27,7 +27,8 @@ FORMATS = {"JPEG": "image/jpeg", "PNG": "image/png", "WEBP": "image/webp"}  # wh
 # (60 MP: 443 MB), a 20 MP PNG with transparency at 401 MB (40 MP: 569 MB, over a 512 MB server).
 MAX_PIXELS = {"JPEG": 50_000_000, "PNG": 20_000_000, "WEBP": 20_000_000}
 CSV_COLUMNS = ["id", "receipt_date", "merchant", "category", "currency"]
-CSV_COLUMNS += ["net_amount", "tax_amount", "total_amount"]
+CSV_COLUMNS += ["net_amount", "tax_amount", "total_amount", "note"]
+FORMULA_START = ("=", "+", "-", "@", "\t", "\r")  # spreadsheets could run these as a formula
 
 
 @lru_cache
@@ -45,6 +46,7 @@ class ReceiptUpdate(BaseModel):
     tax_amount: Decimal | None = None
     total_amount: Decimal | None = None
     category: Literal[tuple(CATEGORIES)] | None = None  # type: ignore[valid-type]
+    note: str | None = Field(None, max_length=500)  # the reviewer's own words, kept as typed
 
     @field_validator("category")
     @classmethod
@@ -100,17 +102,10 @@ def export_csv(store: StoreDep, user: UserDep) -> Response:
     writer = csv.DictWriter(out, CSV_COLUMNS, extrasaction="ignore")
     writer.writeheader()
     for row in store.list(user, "confirmed"):
-        merchant = row.get("merchant") or ""
-        if merchant[:1] in (
-            "=",
-            "+",
-            "-",
-            "@",
-            "\t",
-            "\r",
-        ):  # spreadsheets could run it as a formula
-            merchant = f"'{merchant}"
-        writer.writerow({**row, "merchant": merchant})
+        text = {f: row.get(f) or "" for f in ("merchant", "note")}  # free text, unlike the amounts
+        writer.writerow(
+            row | {f: f"'{v}" if v.startswith(FORMULA_START) else v for f, v in text.items()}
+        )
     headers = {"Content-Disposition": 'attachment; filename="receipts.csv"'}
     return Response(out.getvalue(), media_type="text/csv", headers=headers)
 

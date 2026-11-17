@@ -54,7 +54,8 @@ One-time Supabase setup (free tier):
    Check first, in the SQL Editor, that this returns your email:
    `select email from auth.users order by created_at limit 1;`
    If it doesn't, edit the `update` line in `0004` to pick your account by email before running it.
-   Create other accounts (such as a demo one) only after that.
+   Create other accounts (such as a demo one) only after that. Then run `0005`, which adds the
+   optional reviewer note.
 4. Under **Project Settings → API keys**, copy the project URL and the secret (service role) key into
    `apps/api/.env` as `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. That key bypasses all access
    rules: keep it in `.env` (git-ignored), never in the web app.

@@ -32,6 +32,7 @@ export type Receipt = {
   tax_amount: Amount;
   total_amount: Amount;
   category: string | null;
+  note: string | null; // the reviewer's own note, at most 500 characters
   validation_errors: string[];
   image_url?: string;
 };

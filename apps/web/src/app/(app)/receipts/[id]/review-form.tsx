@@ -18,7 +18,7 @@ const FIELDS = [
 // Only the editable fields reach the browser; the OCR text and check details stay on the server.
 type Editable = Pick<
   Receipt,
-  "id" | "merchant" | "receipt_date" | "currency" | "net_amount" | "tax_amount" | "total_amount" | "category"
+  "id" | "merchant" | "receipt_date" | "currency" | "net_amount" | "tax_amount" | "total_amount" | "category" | "note"
 >;
 
 const input = "min-h-11 rounded-lg border border-gray-300 bg-white px-3 text-base text-gray-900";
@@ -93,6 +93,17 @@ export default function ReviewForm({ receipt, nextHref }: { receipt: Editable; n
               </option>
             ))}
           </select>
+        </label>
+        <label className="flex flex-col gap-1.5 font-medium text-gray-700 sm:col-span-2">
+          Note (optional)
+          <textarea
+            name="note"
+            rows={2}
+            maxLength={500}
+            defaultValue={receipt.note ?? ""}
+            placeholder="e.g. Client lunch with Acme; GST added by hand"
+            className={`${input} py-2 font-normal`}
+          />
         </label>
       </div>
       {/* No name, so it isn't sent: confirming is the record. `required` also stops Enter from skipping it. */}
