@@ -5,11 +5,17 @@ Turns receipt photos into structured, categorised, accounting-ready expense data
 **Core principle:** a deterministic engine handles the numbers; AI only makes suggestions.
 Nothing is finalised without passing a confidence check or a human confirming it.
 
+**Live app:** [ai-expense-tool.vercel.app](https://ai-expense-tool.vercel.app) (accounts are created by the owner)
+
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/SubodhAmbade/ai-expense-tool/blob/main/notebooks/ai_expense_tool_colab_qwen_fixed.ipynb)
+
+**Try it in Colab:** the [notebook](notebooks/ai_expense_tool_colab_qwen_fixed.ipynb) runs the whole pipeline end to end with no setup or API keys: OCR, extraction, validation, BERT categories and a Qwen policy check, on sample receipts or your own photos.
+
 For setup, usage, architecture and design decisions, see the **[User and Architecture Guide](docs/GUIDE.md)**.
 
 ## Pipeline
 
-1. **Capture**: upload or photograph a receipt; OCR runs locally (Tesseract or PaddleOCR).
+1. **Capture**: upload or photograph a receipt; OCR runs on the server (RapidOCR, PaddleOCR models on ONNX).
 2. **Extract**: merchant, date, amount, currency, tax.
 3. **Validate**: plain code checks that net + tax = total. Tax rates live in a per-region config.
 4. **Categorise**: keyword/merchant rules first, compared against a small local BERT model.
@@ -28,7 +34,8 @@ supabase/
 data/
   receipts/   receipt images (git-ignored)
   labels/     category labels per merchant (AI-drafted, being verified)
-eval/         categoriser comparison
+eval/         evaluation scripts
+notebooks/    Colab notebook: the full pipeline plus a policy check
 ```
 
 ## Getting started (Windows)
@@ -115,6 +122,7 @@ for categories, `python ../../eval/categorise_eval.py`.
 - [x] Skeleton app: upload, review, confirm, CSV export; Supabase for data and photos
 - [x] Error analysis of missed totals; rounding, typo and tax-summary rules
 - [x] Login: owner-created accounts, each user sees only their own receipts, 15-minute idle sign-out
-- [ ] Deploy (Render + Vercel)
+- [x] Deploy (Render + Vercel)
+- [x] Colab notebook: full pipeline with BERT categories and a Qwen policy check
 - [ ] Week 2: baseline categoriser, labelled test set, model comparison
 - [ ] Week 3: UI, eval results, demo video
